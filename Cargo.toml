@@ -1,0 +1,37 @@
+[package]
+name = "ok-gpg-agent"
+description = "A cross-platform agent for using OnlyKey"
+version = "0.1.0"
+edition = "2021"
+authors = ["svareille",]
+readme = "README.md"
+license = "GPL-3.0"
+homepage = "https://github.com/svareille/OnlyKey-gpg-agent"
+repository = "https://github.com/svareille/OnlyKey-gpg-agent"
+keywords = ["gpg", "pgp", "onlykey"]
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+anyhow ="*"
+chrono = "*"
+clap = { version = "*", features = ["derive"] }
+config = "*"
+hex = "*"
+hidapi = "*"
+lazy_static = "*"
+log = "*"
+num = "*"
+num-derive = "*"
+num-traits = "*"
+rand = "*"
+serde = { version = "1.0", features = ["derive"] }
+sha2 = "*"
+thiserror = "*"
+
+[target."cfg(windows)".dependencies]
+fern = "*"
+
+[target."cfg(not(windows))".dependencies]
+fern = { version = "*", features = ["syslog-6"] }
+syslog = "6"
