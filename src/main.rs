@@ -293,7 +293,7 @@ fn setup_logger() -> Result<(), fern::InitError> {
 }
 
 #[cfg(not(windows))]
-fn setup_logger(level: log::LevelFilter) -> Result<()> {
+fn setup_logger() -> Result<(), fern::InitError> {
 
     let syslog_formatter = syslog::Formatter3164::default();
 
