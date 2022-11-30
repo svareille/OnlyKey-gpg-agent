@@ -101,6 +101,8 @@ impl AssuanListener {
 
         let listener = UnixListener::bind(&agent_socket)?;
 
+        debug!("Unix socket bound");
+
         Ok(AssuanListener { listener, socket_file: agent_socket})
     }
 

@@ -167,6 +167,7 @@ fn main() -> Result<()> {
         e
     })?;
 
+    debug!("Waiting for client connection");
     while let Ok(mut client) = assuan_listener.accept() {
         debug!("GPG attempting connection...");
         if let Err(e) = client.connect() {
@@ -196,6 +197,7 @@ fn main() -> Result<()> {
             },
         }
         *(shared_client.lock().unwrap()) = None;
+        debug!("Waiting for client connection");
     }
 
     server.close().map_err(|e| {
