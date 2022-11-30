@@ -22,7 +22,8 @@ Works with:
 ## Usage
 
 Just use `gpg` or any gpg client as usual and if your OnlyKey is plugged and correctly configured
-signing and decryption will be done by your key. 
+signing and decryption will be done by your key (if the corresponding private key is loaded in your
+OnlyKey of course).
 
 If the `challenge` option of `ok-agent.toml` is `"true"` or not given you will be invited to enter
 a 3-digits chalenge on your OnlyKey on signing and decryption. If your OnlyKey is configured to ask
@@ -41,13 +42,26 @@ the official GPG agent for OnlyKey.
 
 | Official `onlykey-gpg` | OnlyKey GPG Agent |
 | -- | -- |
-| Works on Linux and Mac (Windows soon?) | Works on Windows, Linux and Mac (to be tested) |
-| |  |
+| Works on Linux and Mac (Windows soon?). | Works on Windows, Linux and Mac (not tested). |
+| Separate standard computer-hosted keys and onlykey-hosted keys, so that both cannot be used at the same time. | Interract with the original gpg-agent so that both computer-hosted and onlykey-hosted keys can be used at the same time. |
+| Need to unset `GNUPGHOME` to use computer-hosted keys. | Don't need to do anything to switch between computer-hosted and onlykey-hosted keys. |
+| Works with derivated keys. | Does not work with derivated keys yet. |
+
+I initially began this project in order to have a way to use my PGP keys from my OnlyKey on Windows,
+while having a seamless experience (not having to use special commands or having to choose between
+configurations with keys on computer and keys on device). Theses two requirements are not satisfied
+by the official onlykey-agent, thus #fineilldoitmyself. Plus it was a great opportunity to code
+something in Rust.
 
 ## Known bugs/limitations
 
 - Signing with an RSA key of 4096 bits does not work. See https://github.com/trustcrypto/libraries/issues/25 for more details.
 - Derived keys are not supported yet.
+- Following links in socket file on Unix is not yet supported.
+- Under some unknown conditions on Unix, gpg seems to start the agent's process synchronously,
+resulting in a deadlock. The only way, for now, to circumvent this problem is to launch
+`ok-gpg-agent` manually. Keep in mind that the Unix socket can still be present, preventing any new
+instance to start successfully.
 
 ## Install
 
@@ -58,6 +72,11 @@ $ gpgconf -L homedir
 Then, in this file, add the line
 ```
 agent-program path/to/ok-gpg-agent.exe
+```
+
+If gpg-agent is already running either restart the computer, kill the process or use the command
+```shell
+$ gpg-connect-agent KILLAGENT /bye
 ```
 
 ## Configure
@@ -98,7 +117,7 @@ The possible global options of `ok-agent.toml` are:
 
 - `challenge`: boolean indicating if a challenge must be entered to authorize signature and
   decryption. Default to `"true"`.
-- `log_level`: the... log level. Must be one of (case-incensitive) `"off"`, `"error"`, `"warn"`,
+- `log_level`: the log level. Must be one of (case-incensitive) `"off"`, `"error"`, `"warn"`,
   `"info"`, `"debug"` or `"trace"`. Default to `"info"`.
 - `agent_program`: path to the original *gpg-agent*. If `""`, the agent advertized by `gpg-conf`
   will be used. Default to `""`.
@@ -121,6 +140,22 @@ keygrip = "F897F717026CAB4E3CE8E5055F527B260D012824"
 ```
 
 ## Troubleshooting
+
+### `ok-gpg-agent` is not started
+
+If `ok-gpg-agent` is not started even though `gpg.conf` is correctly configured you can check a few
+things:
+
+- First, check if `gpg.conf` is correctly loaded. Look at `gpg --debug extprog -K`.
+- Secondly, check if `ok-gpg-agent` starts when called directly on the command line.
+
+  If the error "Address already in use" is displayed and you are on Linux, remove the Unix
+  socket file (its path is shown a few lines above).
+
+### The OnlyKey is not recognized
+
+On Linux, don't forget to follow the [Using OnlyKey with Linux](https://docs.onlykey.io/linux.html)
+guide to communicate with OnlyKey.
 
 ### Log file
 
