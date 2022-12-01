@@ -35,3 +35,4 @@ fern = "*"
 [target."cfg(not(windows))".dependencies]
 fern = { version = "*", features = ["syslog-6"] }
 syslog = "6"
+daemonize = "*"

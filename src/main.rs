@@ -8,6 +8,9 @@ use anyhow::{Result, bail};
 use clap::{Parser};
 use log::{info, debug, error, trace, warn};
 
+#[cfg(not(windows))]
+use daemonize::Daemonize;
+
 #[macro_use]
 extern crate lazy_static;
 
@@ -27,6 +30,12 @@ fn main() -> Result<()> {
         error!("Failed to parse command line: {:?}", e);
         e
     })?;
+    
+    info!("Agent started with arguments: {:?}", args);
+
+    if args.daemon {
+        daemonize()?;
+    }
 
     info!("Working with homedir {:?}", args.homedir.as_deref());
 
@@ -355,6 +364,29 @@ fn setup_logger() -> Result<(), fern::InitError> {
     }
     logger.apply()?;
     Ok(())
+}
+
+#[cfg(windows)]
+fn daemonize() -> Result<()> {
+    info!("No daemonization on Windows, the process is already detached");
+    Ok(())
+}
+ 
+#[cfg(not(windows))]
+fn daemonize() -> Result<()> {
+    let daemonize = Daemonize::new()    // is optional, see `Daemonize` documentation
+            .working_directory("/tmp");
+        
+        match daemonize.start() {
+            Ok(_) => {
+                info!("Successfully daemonized");
+                Ok(())
+            },
+            Err(e) => {
+                error!("Could not daemonize: {:?}", e);
+                bail!(e)
+            },
+        }
 }
 
 fn handle_server(mut server: AssuanServer, client: Sender<AssuanResponse>) -> Result<()>{
