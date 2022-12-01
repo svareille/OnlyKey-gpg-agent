@@ -58,10 +58,9 @@ something in Rust.
 - Signing with an RSA key of 4096 bits does not work. See https://github.com/trustcrypto/libraries/issues/25 for more details.
 - Derived keys are not supported yet.
 - Following links in socket file on Unix is not yet supported.
-- Under some unknown conditions on Unix, gpg seems to start the agent's process synchronously,
-resulting in a deadlock. The only way, for now, to circumvent this problem is to launch
-`ok-gpg-agent` manually. Keep in mind that the Unix socket can still be present, preventing any new
-instance to start successfully.
+- On some Linux (Debian and derivatives) the gpg-agent is started by systemd (`/usr/lib/systemd/user/gpg-agent.service`).
+  There is currently no support for this configuration. See [Troubleshooting/systemd](#systemd).
+- `gpg-agent` supervised mode is not supported. Although it's deprecated, the systemd's service of Debian still uses it.
 
 ## Install
 
@@ -146,11 +145,37 @@ keygrip = "F897F717026CAB4E3CE8E5055F527B260D012824"
 If `ok-gpg-agent` is not started even though `gpg.conf` is correctly configured you can check a few
 things:
 
-- First, check if `gpg.conf` is correctly loaded. Look at `gpg --debug extprog -K`.
-- Secondly, check if `ok-gpg-agent` starts when called directly on the command line.
+#### `gpg.conf`
 
-  If the error "Address already in use" is displayed and you are on Linux, remove the Unix
-  socket file (its path is shown a few lines above).
+Check if `gpg.conf` is correctly loaded. Look at `gpg --debug extprog -K`.
+
+#### `ok-gpg-agent`
+
+Check if `ok-gpg-agent` starts when called directly on the command line.
+
+If the error "Address already in use" is displayed and you are on Linux, remove the Unix
+socket file (its path is shown a few lines above).
+
+#### systemd
+
+On some Linux (Debian and derivatives) the gpg-agent is started by systemd
+(`/usr/lib/systemd/user/gpg-agent.service`). There is currently no support for this
+configuration. One way to circumvent this would be to save the original gpg-agent and replace it by
+`ok-gpg-agent`:
+
+```shell
+# cp /usr/bin/gpg-agent /usr/bin/gpg-agent-orig
+# cp ok-gpg-agent /usr/bin/gpg-agent
+```
+
+Then tell `ok-gpg-agent` to use the right gpg-agent:
+
+In `ok-agent.toml`, add the line:
+```toml
+agent_program = "/usr/bin/gpg-agent-orig"
+```
+
+However systemd launches gpg-agent with the `--supervised` option, which is not yet supported.
 
 ### The OnlyKey is not recognized
 
@@ -161,7 +186,7 @@ guide to communicate with OnlyKey.
 
 The log file is written in:
 - Unix:
-  - A syslog if present;
+  - A syslog if present (`journalctl --user -ef`);
   - The temporary directory otherwise, ofently `/tmp/ok-gpg-agent.log`.
 - Windows:
   - The user temporary directory, ofently `C:/Users/<user>/AppData/Local/Temp/ok-gpg-agent.log`.
