@@ -55,7 +55,7 @@ something in Rust.
 
 ## Known bugs/limitations
 
-- Signing with an RSA key of 4096 bits does not work. See https://github.com/trustcrypto/libraries/issues/25 for more details.
+- Signing with an RSA key of 4096 bits may not work. See https://github.com/trustcrypto/libraries/issues/25 for more details.
 - Derived keys are not supported yet.
 - Following links in socket file on Unix is not yet supported.
 - On some Linux (Debian and derivatives) the gpg-agent is started by systemd (`/usr/lib/systemd/user/gpg-agent.service`).
