@@ -269,7 +269,7 @@ impl OnlyKey {
                 // Got good part
                 self.error_parser(&part, sign_key)?;
                 match sign_key.r#type().unwrap() {
-                    KeyType::Ecc => {
+                    KeyType::Ecc(_) => {
                         // We got everything
                         result = part;
                         break;
@@ -290,7 +290,7 @@ impl OnlyKey {
             debug!("Timeout reading signature");
         }
 
-        if sign_key.r#type().unwrap() == KeyType::Ecc {
+        if let KeyType::Ecc(_) = sign_key.r#type().expect("Key info changed unexpectedly") {
             if result.len() >= 60 {
                 //debug!("Got signature {} of length {}", hex::encode(result.clone()), result.len());
                 result.resize(64, 0);
@@ -327,7 +327,7 @@ impl OnlyKey {
                 // Got good part
                 self.error_parser(&part, key)?;
                 match key.r#type().unwrap() {
-                    KeyType::Ecc => {
+                    KeyType::Ecc(_) => {
                         // We got everything
                         result = part;
                         break;
@@ -354,7 +354,7 @@ impl OnlyKey {
             debug!("Timeout reading decrypted data");
         }
 
-        if key.r#type().unwrap() == KeyType::Ecc {
+        if let KeyType::Ecc(_) = key.r#type().expect("Key info changed unexpectedly") {
             if let Some(r) = result.get(34..63) {
                 // As per https://www.rfc-editor.org/rfc/rfc6637.html#section-6, an OpenPGP MPI
                 // begins with the byte 0x04
@@ -391,9 +391,18 @@ impl OnlyKey {
         match String::from_utf8(data.split(|&c|c==0)
         .next().unwrap_or_default().to_vec()).unwrap_or_default().as_ref() {
             "Error incorrect challenge was entered" => Err(OnlyKeyError::WrongChallenge),
-            "Error no key set in this slot" => Err(OnlyKeyError::NoKeySet(key.slot.clone())),
-            "Error key not set as signature key" => Err(OnlyKeyError::NotASignatureKey(key.slot.clone())),
-            "Error key not set as decryption key" => Err(OnlyKeyError::NotADecryptionKey(key.slot.clone())),
+            "Error no key set in this slot" => Err(OnlyKeyError::NoKeySet(match key {
+                KeyInfo::StoredKey(key) => key.slot.clone(),
+                KeyInfo::DerivedKey(_) => "Derived key".to_string(),
+            })),
+            "Error key not set as signature key" => Err(OnlyKeyError::NotASignatureKey(match key {
+                KeyInfo::StoredKey(key) => key.slot.clone(),
+                KeyInfo::DerivedKey(_) => "Derived key".to_string(),
+            })),
+            "Error key not set as decryption key" => Err(OnlyKeyError::NotADecryptionKey(match key {
+                KeyInfo::StoredKey(key) => key.slot.clone(),
+                KeyInfo::DerivedKey(_) => "Derived key".to_string(),
+            })),
             "Error with RSA data to sign invalid size" => Err(OnlyKeyError::InvalidDataSize),
             "Error with RSA signing" => Err(OnlyKeyError::SignFailed),
             "Error with RSA data to decrypt invalid size" => Err(OnlyKeyError::InvalidDataSize),
@@ -408,9 +417,15 @@ impl OnlyKey {
             "Error not in config mode, hold button 6 down for 5 sec" => Err(OnlyKeyError::NotInConfigMode),
             "No PIN set, You must set a PIN first" => Err(OnlyKeyError::NotInitialized),
             "Error invalid ECC slot" => Err(OnlyKeyError::WrongEccSlot),
-            "Error no ECC Private Key set in this slot" => Err(OnlyKeyError::NoKeySet(key.slot.clone())),
+            "Error no ECC Private Key set in this slot" => Err(OnlyKeyError::NoKeySet(match key {
+                KeyInfo::StoredKey(key) => key.slot.clone(),
+                KeyInfo::DerivedKey(_) => "Derived key".to_string(),
+            })),
             "Error invalid RSA slot" => Err(OnlyKeyError::WrongRsaSlot),
-            "Error no RSA Private Key set in this slot" => Err(OnlyKeyError::NoKeySet(key.slot.clone())),
+            "Error no RSA Private Key set in this slot" => Err(OnlyKeyError::NoKeySet(match key {
+                KeyInfo::StoredKey(key) => key.slot.clone(),
+                KeyInfo::DerivedKey(_) => "Derived key".to_string(),
+            })),
             "Error invalid RSA type" => Err(OnlyKeyError::InvalidRsaType),
             "Timeout occured while waiting for confirmation on OnlyKey" => Err(OnlyKeyError::Timeout),
             _ => Ok(()),

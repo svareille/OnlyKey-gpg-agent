@@ -27,7 +27,16 @@ where D: Deserializer<'de> {
 #[derive(PartialEq)]
 pub enum KeyType {
     Rsa(usize),
-    Ecc,
+    Ecc(EccType),
+}
+
+#[derive(Debug, Deserialize)]
+#[derive(Clone, PartialEq)]
+pub enum EccType {
+    Unkwnow,
+    Ed25519,
+    Nist256P1,
+    Secp256K1
 }
 
 #[derive(Error, Debug)]
@@ -36,10 +45,41 @@ pub enum KeyInfoError {
     UnkwnownSlotName(String),
 }
 
+#[derive(Debug, Deserialize)]
+#[derive(Clone)]
+#[serde(untagged)]
+pub enum KeyInfo {
+    StoredKey(StoredKeyInfo),
+    DerivedKey(DerivedKeyInfo)
+}
+
+impl KeyInfo {
+    pub fn slot_nb(&self) -> Result<u8, KeyInfoError> {
+        match self {
+            KeyInfo::StoredKey(keyinfo) => keyinfo.slot_nb(),
+            KeyInfo::DerivedKey(keyinfo) => keyinfo.slot_nb(),
+        }
+    }
+
+    pub fn r#type(&self) -> Result<KeyType, KeyInfoError> {
+        match self {
+            KeyInfo::StoredKey(keyinfo) => keyinfo.r#type(),
+            KeyInfo::DerivedKey(keyinfo) => keyinfo.r#type(),
+        }
+    }
+
+    pub fn keygrip(&self) -> String {
+        match self {
+            KeyInfo::StoredKey(key) => key.keygrip.clone(),
+            KeyInfo::DerivedKey(key) => key.keygrip.clone(),
+        }
+    }
+}
+
 /// Info about a key as stored in the config file
 #[derive(Debug, Deserialize)]
 #[derive(Clone)]
-pub struct KeyInfo {
+pub struct StoredKeyInfo {
     /// The slot of the OnlyKey on which the private part of this key is stored
     /// 
     /// Slot may be RSA1-RSA4 ECC1-ECC16
@@ -49,10 +89,10 @@ pub struct KeyInfo {
     /// The size of the public key in bits
     /// Only required for RSA keys.
     #[serde(default)]
-    size: usize,
+    pub size: usize,
 }
 
-impl KeyInfo {
+impl StoredKeyInfo {
     pub fn slot_nb(&self) -> Result<u8, KeyInfoError> {
         let mut map = HashMap::new();
         for i in 1..=4 {
@@ -68,10 +108,35 @@ impl KeyInfo {
         if self.slot.starts_with("RSA") {
             Ok(KeyType::Rsa(self.size))
         } else if self.slot.starts_with("ECC") {
-            Ok(KeyType::Ecc)
+            Ok(KeyType::Ecc(EccType::Unkwnow))
         } else {
             Err(KeyInfoError::UnkwnownSlotName(self.slot.clone()))
         }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[derive(Clone)]
+pub struct DerivedKeyInfo {
+    /// Identity linked to the key ("Name <name@mail.com>")
+    pub identity: String,
+    /// Type of the key
+    pub ecc_type: EccType,
+    /// The keygrip of this key
+    pub keygrip: String,
+}
+
+impl DerivedKeyInfo {
+    pub fn slot_nb(&self) -> Result<u8, KeyInfoError> {
+        Ok(match self.ecc_type {
+            EccType::Unkwnow => 132,
+            EccType::Ed25519 => 201,
+            EccType::Nist256P1 => 202,
+            EccType::Secp256K1 => 203,
+        })
+    }
+    pub fn r#type(&self) -> Result<KeyType, KeyInfoError> {
+        Ok(KeyType::Ecc(self.ecc_type.clone()))
     }
 }
 

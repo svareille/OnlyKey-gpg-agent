@@ -425,18 +425,18 @@ impl MyAgent {
     }
 
     pub fn get_known_keygrips(&self) -> Vec<String> {
-        self.settings.keyinfo.iter().map(|info| info.keygrip.clone()).collect()
+        self.settings.keyinfo.iter().map(|info| info.keygrip()).collect()
     }
 
     pub fn have_key(&self, keygrip: &str) -> bool {
-        self.settings.keyinfo.iter().any(|info| info.keygrip == keygrip)
+        self.settings.keyinfo.iter().any(|info| info.keygrip() == keygrip)
     }
 
     /// Select the key for future operations.
     /// Returns `true` if the key exists, `false` otherwise.
     /// 
     pub fn select_key(&mut self, keygrip: &str) -> bool {
-        if let Some(info) = self.settings.keyinfo.iter().find(|info| info.keygrip == keygrip) {
+        if let Some(info) = self.settings.keyinfo.iter().find(|info| info.keygrip() == keygrip) {
             self.key = Some(info.clone());
             return true;
         }
@@ -460,7 +460,7 @@ impl MyAgent {
 
                     let signature = ok.lock().unwrap().sign(&data.data, &sign_key)?;
                     match sign_key.r#type() {
-                        Ok(KeyType::Ecc) => {
+                        Ok(KeyType::Ecc(_)) => {
                             if signature.len() != 64 {
                                 error!("Signature length is {}, expected 64", signature.len());
                                 return Err(AgentError::InvalidSignatureLength(signature.len()));
@@ -479,7 +479,7 @@ impl MyAgent {
                     }
 
                     let sexp = match sign_key.r#type() {
-                        Ok(KeyType::Ecc) => {
+                        Ok(KeyType::Ecc(_)) => {
                             Sexp::List(vec![
                                 Sexp::Atom(b"sig-val".to_vec()),
                                 Sexp::List(vec![
@@ -532,7 +532,7 @@ impl MyAgent {
             if let Some(ok) = self.onlykey.clone() {
                 debug!("Data to decrypt: {:?}", data);
                 let ciphertext = match key.r#type() {
-                    Ok(KeyType::Ecc) => {
+                    Ok(KeyType::Ecc(_)) => {
                         parse_ecdh(&data).map_err(|_| AgentError::Other)?
                     },
                     Ok(KeyType::Rsa(_)) => {
