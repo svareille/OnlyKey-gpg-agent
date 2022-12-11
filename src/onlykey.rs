@@ -175,7 +175,7 @@ impl OnlyKey {
 
         let payload: Vec<u8> = hex::decode(time_str).expect("The time should have been hex-encoded already");
 
-        self.send(OKSETTIME, payload)?;
+        self.send(OKSETTIME, &payload)?;
 
         let resp = self.read_string()?;
         self.handle_msg(&resp);
@@ -226,10 +226,10 @@ impl OnlyKey {
         }
     }
 
-    pub fn send(&self, msg_type: u8, mut payload: Vec<u8>) -> Result<(), OnlyKeyError> {
+    pub fn send(&self, msg_type: u8, payload: &[u8]) -> Result<(), OnlyKeyError> {
         let mut message: Vec<u8> = MESSAGE_HEADER.into();
         message.push(msg_type);
-        message.append(&mut payload);
+        message.extend_from_slice(payload);
 
         self.device.write(&message)?;
         Ok(())
@@ -250,20 +250,19 @@ impl OnlyKey {
                 payload[1] = chunk.len() as u8;
             }
             payload.extend_from_slice(chunk);
-            self.send(msg_type, payload)?;
+            self.send(msg_type, &payload)?;
         }
         Ok(())
     }
 
     pub fn pubkey(&self, key: &KeyInfo) -> Result<Vec<u8>, OnlyKeyError> {
         let mut data: Vec<u8>;
-        let slot: u8;
         match key {
             KeyInfo::StoredKey(key) => {
-                slot = key.slot_nb().map_err(|e|match e {
+                let slot = key.slot_nb().map_err(|e|match e {
                     KeyInfoError::UnkwnownSlotName(slot) => OnlyKeyError::UnkwnownSlotName(slot)
                 })?;
-                data = vec![0];
+                data = vec![slot, 0];
                 // TODO: place in data the exact key type or ask OnlyKey developer to patch the firmware
             },
             KeyInfo::DerivedKey(key) => {
@@ -271,16 +270,15 @@ impl OnlyKey {
                 let hash = Sha256::new()
                     .chain_update(identity)
                     .finalize();
-                data = vec![key.algo_nb()];
+                data = vec![132, key.algo_nb()];
                 data.extend_from_slice(&hash);
-                slot = 132;
             },
         }
 
         // Time to wait for response
         let wait_for = Duration::from_millis(1500);
 
-        self.send_with_slot(OKGETPUBKEY, slot, &data)?;
+        self.send(OKGETPUBKEY, &data)?;
 
         let start = Instant::now();
         let mut result = Vec::new();
@@ -310,6 +308,9 @@ impl OnlyKey {
 
         if start.elapsed() >= wait_for {
             debug!("Timeout reading public key");
+        }
+        if result.len() == 0 {
+            return Err(OnlyKeyError::PublicKeyGenerationFailed("No data received".to_owned()));
         }
 
         match key.r#type().expect("Key info changed unexpectedly") {
@@ -481,6 +482,7 @@ impl OnlyKey {
     fn error_parser(&self, data: &[u8], key: &KeyInfo) -> Result<(), OnlyKeyError> {
         match String::from_utf8(data.split(|&c|c==0)
         .next().unwrap_or_default().to_vec()).unwrap_or_default().as_ref() {
+            "INITIALIZED" => Err(OnlyKeyError::Locked),
             "Error incorrect challenge was entered" => Err(OnlyKeyError::WrongChallenge),
             "Error no key set in this slot" => Err(OnlyKeyError::NoKeySet(match key {
                 KeyInfo::StoredKey(key) => key.slot.clone(),
