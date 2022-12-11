@@ -76,23 +76,26 @@ pub struct OnlyKey {
 }
 
 impl OnlyKey {
-    pub fn try_connection() -> Result<Option<Arc<Mutex<Self>>>, OnlyKeyError> {
+    pub fn hid_connect() -> Result<Option<OnlyKey>, OnlyKeyError> {
         let api = HidApi::new()?;
-        let mut onlykey = None;
         for device in api.device_list() {
             if OK_DEVICE_IDS.contains(&(device.vendor_id(), device.product_id())) {
                 if device.serial_number() == Some("1000000000") {
                     if device.usage_page() == 0xffab || device.interface_number() == 2 {
                         info!("Found Onlykey device at {}:{}", device.vendor_id(), device.product_id());
-                        onlykey = OnlyKey::new(device.open_device(&api)?).map(Some)?;
+                        return OnlyKey::new(device.open_device(&api)?).map(Some);
                     }
                 }
                 else if device.usage_page() == 0xf1d0 || device.interface_number() == 1 {
                     info!("Found Onlykey device at {}:{}", device.vendor_id(), device.product_id());
-                    onlykey = OnlyKey::new(device.open_device(&api)?).map(Some)?;
+                    return OnlyKey::new(device.open_device(&api)?).map(Some);
                 }
             }
         }
+        Ok(None)
+    }
+    pub fn try_connection() -> Result<Option<Arc<Mutex<Self>>>, OnlyKeyError> {
+        let onlykey = OnlyKey::hid_connect()?;
 
         let onlykey = onlykey.map(|ok| Arc::new(Mutex::new(ok)));
 
