@@ -2,9 +2,10 @@ use std::{sync::{Mutex, Arc}, time::{Duration, SystemTime, Instant}};
 
 use hidapi::{HidDevice, HidApi};
 use log::{trace, debug, info, warn, error};
+use sha2::{Sha256, Digest};
 use thiserror::Error;
 
-use crate::config::{KeyInfo, KeyInfoError, KeyType};
+use crate::config::{KeyInfo, KeyInfoError, KeyType, EccType};
 
 #[cfg(windows)]
 const MESSAGE_HEADER : [u8; 5] = [0u8, 255, 255, 255, 255];
@@ -18,6 +19,7 @@ const REPORT_SIZE: usize = 64;
 const OKSETTIME: u8 = 0xe4;
 const OKSIGN: u8 = 237;
 const OKDECRYPT: u8 = 240;
+const OKGETPUBKEY: u8 = 236;
 
 pub const OK_DEVICE_IDS: [(u16, u16); 2] = [(0x16C0, 0x0486), (0x1d50, 0x60fc)];
 
@@ -56,8 +58,8 @@ pub enum OnlyKeyError {
     InvalidRsaType,
     #[error("Wrong challenge")]
     WrongChallenge,
-    #[error("Public key generation failed")]
-    PublicKeyGenerationFailed,
+    #[error("Public key generation failed: {0}")]
+    PublicKeyGenerationFailed(String),
     #[error("Timeout occured while waiting for user input")]
     Timeout,
     #[error(transparent)]
@@ -253,6 +255,89 @@ impl OnlyKey {
         Ok(())
     }
 
+    pub fn pubkey(&self, key: &KeyInfo) -> Result<Vec<u8>, OnlyKeyError> {
+        let mut data: Vec<u8>;
+        let slot: u8;
+        match key {
+            KeyInfo::StoredKey(key) => {
+                slot = key.slot_nb().map_err(|e|match e {
+                    KeyInfoError::UnkwnownSlotName(slot) => OnlyKeyError::UnkwnownSlotName(slot)
+                })?;
+                data = vec![0];
+                // TODO: place in data the exact key type or ask OnlyKey developer to patch the firmware
+            },
+            KeyInfo::DerivedKey(key) => {
+                let identity = format!("gpg://{}", key.identity).into_bytes();
+                let hash = Sha256::new()
+                    .chain_update(identity)
+                    .finalize();
+                data = vec![key.algo_nb()];
+                data.extend_from_slice(&hash);
+                slot = 132;
+            },
+        }
+
+        // Time to wait for response
+        let wait_for = Duration::from_millis(1500);
+
+        self.send_with_slot(OKGETPUBKEY, slot, &data)?;
+
+        let start = Instant::now();
+        let mut result = Vec::new();
+
+        while start.elapsed() < wait_for {
+            let part = self.read_timeout(Some(Duration::from_millis(100)))?;
+            if part.len() == 64 && part[..63].windows(2).any(|elem| elem[0] != elem[1]) {
+                // Got good part
+                self.error_parser(&part, key)?;
+                match key.r#type().unwrap() {
+                    KeyType::Ecc(_) => {
+                        // We got everything
+                        result = part;
+                        break;
+                    },
+                    KeyType::Rsa(size) => {
+                        // We got a part of the signature
+                        result.extend(part);
+
+                        if result.len() >= size/8 {
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        if start.elapsed() >= wait_for {
+            debug!("Timeout reading public key");
+        }
+
+        match key.r#type().expect("Key info changed unexpectedly") {
+            KeyType::Ecc(t) => {
+                if result[34..63].windows(2).all(|elem| elem[0] == elem[1]) {
+                    // Key should be ed25519 or cv25519
+                    if t == EccType::Nist256P1 || t == EccType::Secp256K1 {
+                        return Err(OnlyKeyError::PublicKeyGenerationFailed("Public key curve does not match requested type".to_owned()));
+                    }
+                    result.resize(32, 0);
+                    Ok(result)
+                } else {
+                    // Key should be nist256 or secp256
+                    if t == EccType::Ed25519 || t == EccType::Cv25519 {
+                        return Err(OnlyKeyError::PublicKeyGenerationFailed("Public key curve does not match requested type".to_owned()));
+                    }
+                    Ok(result)
+                }
+            },
+            KeyType::Rsa(size) => {
+                if result.len() > size/8 {
+                    result.resize(size/8, 0);
+                }
+                Ok(result)
+            }
+        }
+    }
+
     pub fn sign(&self, data: &[u8], sign_key: &KeyInfo) -> Result<Vec<u8>, OnlyKeyError> {
         let slot = sign_key.slot_nb().map_err(|e|match e {
             KeyInfoError::UnkwnownSlotName(slot) => OnlyKeyError::UnkwnownSlotName(slot)
@@ -295,17 +380,17 @@ impl OnlyKey {
 
         match sign_key.r#type().expect("Key info changed unexpectedly") {
             KeyType::Ecc(_) => {
-            if result.len() >= 60 {
-                //debug!("Got signature {} of length {}", hex::encode(result.clone()), result.len());
-                result.resize(64, 0);
-                return Ok(result);
-            } 
+                if result.len() >= 60 {
+                    //debug!("Got signature {} of length {}", hex::encode(result.clone()), result.len());
+                    result.resize(64, 0);
+                    return Ok(result);
+                } 
             },
             KeyType::Rsa(size) => {
-            if result.len() > size/8 {
-                result.resize(size/8, 0);
-            }
-            return Ok(result);
+                if result.len() > size/8 {
+                    result.resize(size/8, 0);
+                }
+                return Ok(result);
             },
         }
         error!("Signature failed. Got {:?}", result);
@@ -417,7 +502,7 @@ impl OnlyKey {
             s@"Error invalid key, key check failed" => Err(OnlyKeyError::Other(s.to_owned())),
             s@"invalid data, or data does not match key" => Err(OnlyKeyError::Other(s.to_owned())),
             s@"Error invalid data, or data does not match key" => Err(OnlyKeyError::Other(s.to_owned())),
-            "Error generating RSA public N" => Err(OnlyKeyError::PublicKeyGenerationFailed),
+            s@"Error generating RSA public N" => Err(OnlyKeyError::PublicKeyGenerationFailed(s.to_owned())),
             "Error you must set a PIN first on OnlyKey" => Err(OnlyKeyError::NotInitialized),
             "Error device locked" => Err(OnlyKeyError::Locked),
             "Error not in config mode, hold button 6 down for 5 sec" => Err(OnlyKeyError::NotInConfigMode),

@@ -35,6 +35,7 @@ pub enum KeyType {
 pub enum EccType {
     Unkwnow,
     Ed25519,
+    Cv25519,
     Nist256P1,
     Secp256K1
 }
@@ -133,10 +134,22 @@ impl DerivedKeyInfo {
             EccType::Ed25519 => 201,
             EccType::Nist256P1 => 202,
             EccType::Secp256K1 => 203,
+            EccType::Cv25519 => 204,
         })
     }
+
     pub fn r#type(&self) -> Result<KeyType, KeyInfoError> {
         Ok(KeyType::Ecc(self.ecc_type.clone()))
+    }
+
+    pub fn algo_nb(&self) -> u8 {
+        match self.ecc_type {
+            EccType::Unkwnow => 0,
+            EccType::Ed25519 => 1,
+            EccType::Nist256P1 => 2,
+            EccType::Secp256K1 => 3,
+            EccType::Cv25519 => 4,
+        }
     }
 }
 
