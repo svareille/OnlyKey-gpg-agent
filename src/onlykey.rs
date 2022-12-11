@@ -290,17 +290,20 @@ impl OnlyKey {
             debug!("Timeout reading signature");
         }
 
-        if let KeyType::Ecc(_) = sign_key.r#type().expect("Key info changed unexpectedly") {
+        match sign_key.r#type().expect("Key info changed unexpectedly") {
+            KeyType::Ecc(_) => {
             if result.len() >= 60 {
                 //debug!("Got signature {} of length {}", hex::encode(result.clone()), result.len());
                 result.resize(64, 0);
                 return Ok(result);
             } 
-        } else if let Ok(KeyType::Rsa(size)) = sign_key.r#type() {
+            },
+            KeyType::Rsa(size) => {
             if result.len() > size/8 {
                 result.resize(size/8, 0);
             }
             return Ok(result);
+            },
         }
         error!("Signature failed. Got {:?}", result);
         Err(OnlyKeyError::SignFailed)
