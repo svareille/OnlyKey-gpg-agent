@@ -309,7 +309,7 @@ impl OnlyKey {
         if start.elapsed() >= wait_for {
             debug!("Timeout reading public key");
         }
-        if result.len() == 0 {
+        if result.is_empty() {
             return Err(OnlyKeyError::PublicKeyGenerationFailed("No data received".to_owned()));
         }
 
