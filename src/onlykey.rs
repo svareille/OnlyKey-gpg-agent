@@ -349,7 +349,7 @@ impl OnlyKey {
         })?;
 
         let data = match sign_key {
-            KeyInfo::StoredKey(key) => data.to_vec(),
+            KeyInfo::StoredKey(_) => data.to_vec(),
             KeyInfo::DerivedKey(key) => {
                 let mut identity = Self::gpg_identity_derivation(&key.identity);
                 let mut data = data.to_vec();

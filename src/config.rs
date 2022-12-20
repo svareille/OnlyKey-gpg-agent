@@ -3,7 +3,7 @@ use std::{path::{Path, PathBuf}, collections::HashMap};
 use anyhow::{Result};
 use thiserror::Error;
 use config::{ConfigError, Config, File};
-use serde::{Deserialize, Deserializer};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 const fn _default_true() -> bool { true }
 
@@ -24,13 +24,25 @@ where D: Deserializer<'de> {
     }
 }
 
+fn serialize_log_level_filter<S>(log_level: &log::LevelFilter, s: S) -> Result<S::Ok, S::Error>
+where S: Serializer {
+    s.serialize_str(match log_level {
+        log::LevelFilter::Off => "off",
+        log::LevelFilter::Error => "error",
+        log::LevelFilter::Warn => "warn",
+        log::LevelFilter::Info => "info",
+        log::LevelFilter::Debug => "debug",
+        log::LevelFilter::Trace => "trace",
+    })
+}
+
 #[derive(PartialEq)]
 pub enum KeyType {
     Rsa(usize),
     Ecc(EccType),
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[derive(Clone, PartialEq)]
 pub enum EccType {
     Unkwnow,
@@ -46,7 +58,7 @@ pub enum KeyInfoError {
     UnkwnownSlotName(String),
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[derive(Clone)]
 #[serde(untagged)]
 pub enum KeyInfo {
@@ -78,7 +90,7 @@ impl KeyInfo {
 }
 
 /// Info about a key as stored in the config file
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[derive(Clone)]
 pub struct StoredKeyInfo {
     /// The slot of the OnlyKey on which the private part of this key is stored
@@ -116,7 +128,7 @@ impl StoredKeyInfo {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[derive(Clone)]
 pub struct DerivedKeyInfo {
     /// Identity linked to the key ("Name <name@mail.com>")
@@ -153,14 +165,14 @@ impl DerivedKeyInfo {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[derive(Clone)]
 pub struct Settings {
     /// Use challenge for operations
     #[serde(default = "_default_true")]
     pub challenge: bool,
     /// Max log level
-    #[serde(deserialize_with = "deserialize_log_level_filter", default = "_default_log_level")]
+    #[serde(deserialize_with = "deserialize_log_level_filter", serialize_with = "serialize_log_level_filter", default = "_default_log_level")]
     pub log_level: log::LevelFilter,
     /// Path to the gpg-agent to use
     #[serde(default)]

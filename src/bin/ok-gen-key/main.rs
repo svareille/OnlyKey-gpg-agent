@@ -1,10 +1,14 @@
+use std::{process::{Command, Stdio}, io::Write};
+
 use anyhow::{Result, bail, anyhow};
 
 use chrono::{DateTime, Local, Duration, NaiveDate};
 use clap::{Parser, ValueEnum};
 
+use ok_gpg_agent::config::{KeyInfo, EccType, DerivedKeyInfo};
 use regex::Regex;
 use lazy_static::lazy_static;
+use serde::Serialize;
 use text_io::read;
 use thiserror::Error;
 
@@ -190,9 +194,40 @@ Press Enter when you are ready to continue.");
 
     std::io::stdin().read_line(&mut String::new()).unwrap();
 
-    let armored_key = gen_key(identity, key_kind, validity).unwrap();
+    let armored_key = gen_key(identity.clone(), key_kind, validity).unwrap();
 
-    println!("Public key:\n{}", armored_key);
+    let keygrips = keygrips_from_gpg(&armored_key).unwrap();
+
+    let sign_key_info = KeyInfo::DerivedKey(DerivedKeyInfo{
+        identity: identity.clone(),
+        ecc_type: match key_kind {
+            EccKind::Ed25519 => EccType::Ed25519,
+            EccKind::Nist256 => EccType::Nist256P1,
+            EccKind::Secp256 => EccType::Secp256K1,
+        },
+        keygrip: keygrips[0].clone(),
+    });
+    let decrypt_key_info = KeyInfo::DerivedKey(DerivedKeyInfo{
+        identity,
+        ecc_type: match key_kind {
+            EccKind::Ed25519 => EccType::Cv25519,
+            EccKind::Nist256 => EccType::Nist256P1,
+            EccKind::Secp256 => EccType::Secp256K1,
+        },
+        keygrip: keygrips[1].clone(),
+    });
+
+    #[derive(Serialize)]
+    struct DummySettings {
+        keyinfo: Vec<KeyInfo>,
+    }
+ 
+    let temp = DummySettings {keyinfo: vec![sign_key_info, decrypt_key_info]};
+
+    println!("Your public key:\n{}", armored_key);
+    println!();
+    println!("Please add the following lines to your 'ok-agent.toml':");
+    println!("{}", toml::to_string(&temp).unwrap());
 
 }
 
@@ -263,6 +298,51 @@ pub fn get_days_from_month(year: i32, month: u32) -> i64 {
 /// We only verify if the string contains an @ as it is roughly the only required character.
 fn validate_email(input: &str) -> bool {
     input.contains('@')
+}
+
+/*fn keygrip() -> String {
+    let keygrip = Sha1::new()
+        .chain_update(data)
+        .finalize();
+    
+    hex::encode_upper(keygrip)
+}*/
+
+/// Return keygrip of provided key by parsing `gpg` output.
+/// 
+/// Needs `gpg` to be installed and accessible.
+fn keygrips_from_gpg(armored_key: &str) -> Result<Vec<String>> {
+    let mut gpg = Command::new("gpg")
+        .args(["--show-keys", "--with-keygrip", "--with-colons"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()?;
+    
+    gpg.stdin
+        .as_mut()
+        .ok_or_else(||anyhow!("Child process stdin has not been captured!"))?
+        .write_all(armored_key.as_bytes())?;
+    
+    let output = gpg.wait_with_output()?;
+    if output.status.success() {
+        let raw_output = String::from_utf8(output.stdout)?;
+        let mut keygrips = Vec::new();
+        for line in raw_output.lines() {
+            lazy_static! {
+                static ref RE: Regex = Regex::new(r"^grp:::::::::([[:xdigit:]]{40}):").unwrap();
+            }
+            if let Some(cap) = RE.captures(line) {
+                keygrips.push(cap[1].to_owned());
+            }
+        }
+        if keygrips.is_empty() {
+            bail!("No keygrip found in output:\n{}", raw_output);
+        }
+        Ok(keygrips)
+    } else {
+        let err = String::from_utf8(output.stderr)?;
+        bail!("External command failed:\n {}", err)
+    }
 }
 
 

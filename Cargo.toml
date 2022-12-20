@@ -34,6 +34,7 @@ sha1 = "*"
 sha2 = "*"
 smallvec = "1.10"
 text_io = "*"
+toml = "*"
 thiserror = "*"
 
 [target."cfg(windows)".dependencies]
