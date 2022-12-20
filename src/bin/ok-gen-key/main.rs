@@ -1,12 +1,17 @@
-use anyhow::{Result, bail};
+use anyhow::{Result, bail, anyhow};
 
-use chrono::{DateTime, Local, Datelike, NaiveDate};
+use chrono::{DateTime, Local, Duration, NaiveDate};
 use clap::{Parser, ValueEnum};
 
 use regex::Regex;
 use lazy_static::lazy_static;
 use text_io::read;
 use thiserror::Error;
+
+mod onlykey_pgp;
+mod gen_key;
+
+use crate::gen_key::gen_key;
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
@@ -35,12 +40,11 @@ struct Args {
     ///       <n>m = key expires in n months
     ///       <n>y = key expires in n years
     #[arg(long, value_parser = parse_validity_duration)]
-    validity: Option<Validity>,
+    validity: Option<Duration>,
 }
 
 fn main() {
     let mut args = Args::parse();
-    println!("Args: {:?}", args);
 
     if args.identity.is_none() {
         // Interactive mode
@@ -52,7 +56,7 @@ fn main() {
     (3) secp256
 Your selection? ");
             match read!() {
-                1 => args.key_kind = Some(EccKind::Cv25519),
+                1 => args.key_kind = Some(EccKind::Ed25519),
                 2 => args.key_kind = Some(EccKind::Nist256),
                 3 => args.key_kind = Some(EccKind::Secp256),
                 _ => println!("Invalid selection."),
@@ -69,9 +73,10 @@ Key is valid for? ");
             let validity: String = read!();
             match parse_validity_duration(&validity) {
                 Ok(val) => {
-                    match &val {
-                        Validity::Infinity => println!("Key does not expire at all."),
-                        Validity::DateTime(dt) => println!("Key expires at {}.", dt),
+                    if val.is_zero() {
+                        println!("Key does not expire at all.");
+                    } else {
+                        println!("Key expires at {}.", expire_at(val).unwrap());
                     }
                     println!("Is this correct? (y/N)");
                     if let 'y' = read!() {
@@ -166,7 +171,7 @@ The identity string will be formed as "Real name (Comment) <Email>""#);
     // Default values
 
     if args.key_kind.is_none() {
-        args.key_kind = Some(EccKind::Cv25519);
+        args.key_kind = Some(EccKind::Ed25519);
     }
 
     if args.validity.is_none() {
@@ -175,23 +180,28 @@ The identity string will be formed as "Real name (Comment) <Email>""#);
 
     // Now, every parameters are in `args`.
 
+    let identity = args.identity.unwrap();
+    let key_kind = args.key_kind.unwrap();
+    let validity = args.validity.unwrap();
 
+    println!("About to generate a {:?} key, valid until {} for the identity \"{}\"", key_kind, validity, identity);
+    println!("Make sure your OnlyKey is plugged in and unlocked.
+Press Enter when you are ready to continue.");
+
+    std::io::stdin().read_line(&mut String::new()).unwrap();
+
+    let armored_key = gen_key(identity, key_kind, validity).unwrap();
+
+    println!("Public key:\n{}", armored_key);
 
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
 #[derive(Debug)]
 enum EccKind{
-    Cv25519,
+    Ed25519,
     Nist256,
     Secp256,
-}
-
-#[derive(PartialEq)]
-#[derive(Clone, Debug)]
-enum Validity {
-    Infinity,
-    DateTime(DateTime<Local>),
 }
 
 #[derive(Error, Debug)]
@@ -200,41 +210,24 @@ pub enum ValidityError {
     WrongFormat(String),
 }
 
-fn parse_validity_duration(arg: &str) -> Result<Validity> {
+fn parse_validity_duration(arg: &str) -> Result<Duration> {
     lazy_static! {
         static ref RE: Regex = Regex::new(r"^(?P<num>\d*)(?P<unit>[wmy])?$").unwrap();
     }
     match RE.captures(arg) {
         Some(caps) => {
-            let num: u64 = caps.name("num").ok_or_else(|| ValidityError::WrongFormat(arg.to_string()))?.as_str().parse()?;
-            let now = Local::now();
+            let num: i64 = caps.name("num").ok_or_else(|| ValidityError::WrongFormat(arg.to_string()))?.as_str().parse()?;
             match caps.name("unit") {
                 None => {
-                    if num == 0 {
-                        Ok(Validity::Infinity)
-                    } else {
-                        Ok(Validity::DateTime(now.checked_add_signed(chrono::Duration::days(num as i64)).ok_or_else(||ValidityError::WrongFormat(arg.to_string()))?))
-                    }
+                    Ok(Duration::days(num))
                 },
                 Some(unit) => match unit.as_str() {
-                    "w" => Ok(Validity::DateTime(now.checked_add_signed(chrono::Duration::days(num as i64 * 7)).ok_or_else(||ValidityError::WrongFormat(arg.to_string()))?)),
+                    "w" => Ok(Duration::weeks(num)),
                     "m" => {
-                        let month = (now.month0() + num as u32)%12;
-                        let year = now.year() + ((now.month0() as u64 + num)/12) as i32;
-                        let future = now.with_month0(month).unwrap_or_else(|| {
-                            let future = now.with_day(get_days_from_month(year, month+1) as u32).unwrap();
-                            future.with_month0(month).unwrap()
-                        });
-                        let future = future.with_year(year).ok_or_else(|| ValidityError::WrongFormat(arg.to_string()))?;
-                        Ok(Validity::DateTime(future))
+                        Ok(Duration::days(num*30))
                     },
                     "y" => {
-                        let year = now.year() + num as i32;
-                        let future = now.with_year(year).unwrap_or_else(|| {
-                            let future = now.with_day(get_days_from_month(year, now.month()) as u32).unwrap();
-                            future.with_year(year).unwrap()
-                        });
-                        Ok(Validity::DateTime(future))
+                        Ok(Duration::days(num*365))
                     },
                     _ => bail!(ValidityError::WrongFormat(arg.to_string()))
                 },
@@ -243,6 +236,11 @@ fn parse_validity_duration(arg: &str) -> Result<Validity> {
         },
         None => bail!(ValidityError::WrongFormat(arg.to_string()))
     }
+}
+
+fn expire_at(validity: Duration) -> Result<DateTime<Local>> {
+    let now = Local::now();
+    now.checked_add_signed(validity).ok_or_else(|| anyhow!("Validity too big"))
 }
 
 pub fn get_days_from_month(year: i32, month: u32) -> i64 {
@@ -267,6 +265,7 @@ fn validate_email(input: &str) -> bool {
     input.contains('@')
 }
 
+
 #[cfg(windows)]
 #[macro_export]
 macro_rules! read_line {
@@ -289,10 +288,16 @@ macro_rules! read_line {
 
 #[cfg(test)]
 mod tests {
-    use crate::{Validity, parse_validity_duration};
+    use chrono::Duration;
+
+    use crate::{parse_validity_duration};
 
     #[test]
     fn validity_good() {
-        assert_eq!(parse_validity_duration("0").unwrap(), Validity::Infinity);
+        assert_eq!(parse_validity_duration("0").unwrap(), Duration::zero());
+        assert_eq!(parse_validity_duration("10").unwrap(), Duration::days(10));
+        assert_eq!(parse_validity_duration("5w").unwrap(), Duration::weeks(5));
+        assert_eq!(parse_validity_duration("12m").unwrap(), Duration::days(12*30));
+        assert_eq!(parse_validity_duration("2y").unwrap(), Duration::days(2*365));
     }
 }

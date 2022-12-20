@@ -1,4 +1,4 @@
-use std::{sync::{Mutex, Arc}, time::{Duration, SystemTime, Instant}};
+use std::{sync::{Mutex, Arc}, time::{Duration, SystemTime, Instant}, fmt::Debug};
 
 use hidapi::{HidDevice, HidApi};
 use log::{trace, debug, info, warn, error};
@@ -255,6 +255,13 @@ impl OnlyKey {
         Ok(())
     }
 
+    fn gpg_identity_derivation(identity: &str) -> Vec<u8> {
+        let identity = format!("gpg://{}", identity).into_bytes();
+        Sha256::new()
+            .chain_update(identity)
+            .finalize().to_vec()
+    }
+
     pub fn pubkey(&self, key: &KeyInfo) -> Result<Vec<u8>, OnlyKeyError> {
         let mut data: Vec<u8>;
         match key {
@@ -266,12 +273,9 @@ impl OnlyKey {
                 // TODO: place in data the exact key type or ask OnlyKey developer to patch the firmware
             },
             KeyInfo::DerivedKey(key) => {
-                let identity = format!("gpg://{}", key.identity).into_bytes();
-                let hash = Sha256::new()
-                    .chain_update(identity)
-                    .finalize();
+                let identity = Self::gpg_identity_derivation(&key.identity);
                 data = vec![132, key.algo_nb()];
-                data.extend_from_slice(&hash);
+                data.extend_from_slice(&identity);
             },
         }
 
@@ -344,10 +348,20 @@ impl OnlyKey {
             KeyInfoError::UnkwnownSlotName(slot) => OnlyKeyError::UnkwnownSlotName(slot)
         })?;
 
+        let data = match sign_key {
+            KeyInfo::StoredKey(key) => data.to_vec(),
+            KeyInfo::DerivedKey(key) => {
+                let mut identity = Self::gpg_identity_derivation(&key.identity);
+                let mut data = data.to_vec();
+                data.append(&mut identity);
+                data
+            },
+        };
+
         // Time to wait for user interaction
         let wait_for = Duration::from_secs(22);
 
-        self.send_with_slot(OKSIGN, slot, data)?;
+        self.send_with_slot(OKSIGN, slot, &data)?;
 
         let start = Instant::now();
         let mut result = Vec::new();
@@ -528,6 +542,12 @@ impl OnlyKey {
     /// Return a button number corresponding to the given byte
     pub fn get_button(byte: u8) -> u8 {
         byte % 6 + 1
+    }
+}
+
+impl Debug for OnlyKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("OnlyKey").field("device", &self.device.get_product_string()).field("unlocked", &self.unlocked).field("connected", &self.connected).field("version", &self.version).finish()
     }
 }
 
