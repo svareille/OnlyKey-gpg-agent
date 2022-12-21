@@ -5,7 +5,6 @@ use anyhow::{Result, bail};
 use thiserror::Error;
 use num::FromPrimitive;
 use num_derive::FromPrimitive;
-use sha2::{Sha256, Digest};
 
 use crate::{assuan::{AssuanClient, AssuanServer, AssuanCommand, AssuanResponse, self, ServerError, ClientError}, config::{KeyInfo, KeyType}, csexp::Sexp};
 
@@ -146,6 +145,7 @@ pub fn handle_client(mut client: AssuanClient, mut server: AssuanServer, my_agen
                             client.send(AssuanResponse::Inquire { keyword: "HASHVAL".to_owned(), parameters: None })?;
                         } else {
                             debug!("Signing data");
+                            /*server.send(AssuanCommand::Command { command: command.clone(), parameters: parameters.clone()})?;*/
                             match my_agent.sign_data() {
                                 Ok(sig) => {
                                     debug!("Sending signature");
@@ -469,6 +469,7 @@ impl MyAgent {
                         Ok(KeyType::Rsa(size)) => {
                             if signature.len() != size/8 {
                                 error!("Signature length is {}, expected {}", signature.len(), size/8);
+                                debug!("Signature: {:?}", signature);
                                 return Err(AgentError::InvalidSignatureLength(signature.len()));
                             }
                         }
@@ -564,11 +565,7 @@ impl MyAgent {
     }
 
     fn display_challenge(&mut self, data: &[u8]) -> Result<(), AgentError> {
-        // Compute challenge
-        let h1 = Sha256::new()
-        .chain_update(data)
-        .finalize();
-        let (b1, b2, b3) = (OnlyKey::get_button(h1[0]), OnlyKey::get_button(h1[15]), OnlyKey::get_button(h1[31]));
+        let (b1, b2, b3) = OnlyKey::compute_challenge(data);
         let challenge_str = format!("Enter the 3 digit challenge code on OnlyKey to authorize operation:\n{} {} {}", b1, b2, b3);
         if self.settings.challenge {
             info!("{}", challenge_str);

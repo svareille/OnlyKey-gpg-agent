@@ -262,6 +262,18 @@ impl OnlyKey {
             .finalize().to_vec()
     }
 
+    pub fn data_to_send(data: &[u8], key: &KeyInfo) -> Vec<u8> {
+        match key {
+            KeyInfo::StoredKey(_) => data.to_vec(),
+            KeyInfo::DerivedKey(key) => {
+                let mut identity = Self::gpg_identity_derivation(&key.identity);
+                let mut data = data.to_vec();
+                data.append(&mut identity);
+                data
+            },
+        }
+    }
+
     pub fn pubkey(&self, key: &KeyInfo) -> Result<Vec<u8>, OnlyKeyError> {
         let mut data: Vec<u8>;
         match key {
@@ -348,15 +360,7 @@ impl OnlyKey {
             KeyInfoError::UnkwnownSlotName(slot) => OnlyKeyError::UnkwnownSlotName(slot)
         })?;
 
-        let data = match sign_key {
-            KeyInfo::StoredKey(_) => data.to_vec(),
-            KeyInfo::DerivedKey(key) => {
-                let mut identity = Self::gpg_identity_derivation(&key.identity);
-                let mut data = data.to_vec();
-                data.append(&mut identity);
-                data
-            },
-        };
+        let data = OnlyKey::data_to_send(data, sign_key);
 
         // Time to wait for user interaction
         let wait_for = Duration::from_secs(22);
@@ -491,6 +495,14 @@ impl OnlyKey {
 
         error!("Decryption failed. Got {:?}", result);
         Err(OnlyKeyError::DecryptFailed)
+    }
+
+    pub fn compute_challenge(data: &[u8]) -> (u8, u8, u8) {
+        // Compute challenge
+        let h1 = Sha256::new()
+        .chain_update(data)
+        .finalize();
+        (OnlyKey::get_button(h1[0]), OnlyKey::get_button(h1[15]), OnlyKey::get_button(h1[31]))
     }
 
     fn error_parser(&self, data: &[u8], key: &KeyInfo) -> Result<(), OnlyKeyError> {

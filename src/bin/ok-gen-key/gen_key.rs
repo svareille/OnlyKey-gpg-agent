@@ -39,8 +39,6 @@ pub(crate) fn gen_key(identity: String, key_kind: EccKind, creation: DateTime<Ut
     
     let encryption_key = onlykey.pubkey(&decrypt_key_info).unwrap();
 
-    std::io::stdin().read_line(&mut String::new()).unwrap();
-
     // Generating a [Transferable Public Key](https://www.rfc-editor.org/rfc/rfc4880#section-11.1)
 
     let signature_algo = match key_kind {
@@ -537,7 +535,8 @@ fn gen_user_id_signature_body(key_packet_body: &[u8], user_id_body: &[u8], algo:
 
     packet.extend_from_slice(&hash[0..2]);
 
-    //println!("Hash: {:x?}", hash);
+    let (b1, b2, b3) = OnlyKey::compute_challenge(&OnlyKey::data_to_send(&hash, sign_key));
+    println!("Touch your OnlyKey or enter the following 3 digit challenge code to authorize signing:\n{} {} {}", b1, b2, b3);
 
     let res = onlykey.sign(&hash, sign_key).unwrap();
     
@@ -602,6 +601,9 @@ fn gen_subkey_signature_body(key_packet_body: &[u8], subkey_body: &[u8], algo: P
     packet.append(&mut non_hashed_subpackets);
 
     packet.extend_from_slice(&hash[0..2]);
+
+    let (b1, b2, b3) = OnlyKey::compute_challenge(&OnlyKey::data_to_send(&hash, sign_key));
+    println!("Touch your OnlyKey or enter the following 3 digit challenge code to authorize signing:\n{} {} {}", b1, b2, b3);
 
     let res = onlykey.sign(&hash, sign_key).unwrap();
 
