@@ -2,7 +2,7 @@ use std::{process::{Command, Stdio}, io::Write};
 
 use anyhow::{Result, bail, anyhow};
 
-use chrono::{DateTime, Local, Duration, NaiveDate};
+use chrono::{DateTime, Local, Duration, NaiveDate, TimeZone};
 use clap::{Parser, ValueEnum};
 
 use ok_gpg_agent::config::{KeyInfo, EccType, DerivedKeyInfo};
@@ -12,11 +12,13 @@ use serde::Serialize;
 use text_io::read;
 use thiserror::Error;
 
-mod onlykey_pgp;
 mod gen_key;
 
 use crate::gen_key::gen_key;
 
+/// Generate a new PGP key pair from a plugged OnlyKey.
+/// 
+/// The `gpg` command must be available.
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
 struct Args {
@@ -33,22 +35,34 @@ struct Args {
     #[arg(long)]
     identity: Option<String>,
 
-    /// Kind of key to generate. Defaults to cv25519.
-    #[arg(short = 't', long = "type", value_enum)]
+    /// Kind of key to generate. Defaults to ed25519.
+    #[arg(short = 'c', long = "curve", value_enum)]
     key_kind: Option<EccKind>,
 
     /// How long the key should be valid. Defaults to 2 years.
+    /// 
     ///          0 = key does not expire
     ///       <n>  = key expires in n days
     ///       <n>w = key expires in n weeks
     ///       <n>m = key expires in n months
     ///       <n>y = key expires in n years
-    #[arg(long, value_parser = parse_validity_duration)]
+    #[arg(long, value_parser = parse_validity_duration, verbatim_doc_comment )]
     validity: Option<Duration>,
+
+    /// Generate the key with a custom creation date.
+    /// 
+    /// This allows for rebuilding the exact same public key as a previous generation.
+    /// This date correspond to the UNIX time.
+    #[arg(short, long, value_parser = parse_time)]
+    time: Option<DateTime<Local>>,
 }
 
 fn main() {
     let mut args = Args::parse();
+
+    if args.time.is_none() {
+        args.time = Some(Local::now());
+    }
 
     if args.identity.is_none() {
         // Interactive mode
@@ -80,7 +94,7 @@ Key is valid for? ");
                     if val.is_zero() {
                         println!("Key does not expire at all.");
                     } else {
-                        println!("Key expires at {}.", expire_at(val).unwrap());
+                        println!("Key expires at {}.", expire_at(val, args.time.unwrap()).unwrap());
                     }
                     println!("Is this correct? (y/N)");
                     if let 'y' = read!() {
@@ -187,14 +201,19 @@ The identity string will be formed as "Real name (Comment) <Email>""#);
     let identity = args.identity.unwrap();
     let key_kind = args.key_kind.unwrap();
     let validity = args.validity.unwrap();
+    let creation = args.time.unwrap();
 
-    println!("About to generate a {:?} key, valid until {} for the identity \"{}\"", key_kind, validity, identity);
-    println!("Make sure your OnlyKey is plugged in and unlocked.
+    println!("About to generate a {:?} key, valid until {} for the identity \"{}\"", key_kind, expire_at(validity, creation).unwrap() , identity);
+    println!("To regenerate the same key, use the same parameters and add \"--time {}\"", creation.timestamp());
+    println!();
+    println!("You will be asked twice to authorize two signing operation.
+If you have enabled 'challenge mode' for derived key, you will have to enter two 3-digit challenges.
+Make sure your OnlyKey is plugged in and unlocked.
 Press Enter when you are ready to continue.");
 
     std::io::stdin().read_line(&mut String::new()).unwrap();
 
-    let armored_key = gen_key(identity.clone(), key_kind, validity).unwrap();
+    let armored_key = gen_key(identity.clone(), key_kind, creation.into(), validity).unwrap();
 
     let keygrips = keygrips_from_gpg(&armored_key).unwrap();
 
@@ -273,9 +292,16 @@ fn parse_validity_duration(arg: &str) -> Result<Duration> {
     }
 }
 
-fn expire_at(validity: Duration) -> Result<DateTime<Local>> {
-    let now = Local::now();
-    now.checked_add_signed(validity).ok_or_else(|| anyhow!("Validity too big"))
+fn parse_time(arg: &str) -> Result<DateTime<Local>> {
+    match Local.timestamp_opt(arg.parse::<i64>()?, 0) {
+        chrono::LocalResult::None =>Err(anyhow!("The provided time is not valid")),
+        chrono::LocalResult::Single(time) => Ok(time),
+        chrono::LocalResult::Ambiguous(_, _) => unreachable!(),
+    }
+}
+
+fn expire_at(validity: Duration, creation: DateTime<Local>) -> Result<DateTime<Local>> {
+    creation.checked_add_signed(validity).ok_or_else(|| anyhow!("Validity too big"))
 }
 
 pub fn get_days_from_month(year: i32, month: u32) -> i64 {

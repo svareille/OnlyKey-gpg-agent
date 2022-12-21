@@ -6,7 +6,7 @@ use sha1::Sha1;
 use sha2::{Digest, Sha512};
 use crate::{EccKind};
 
-pub(crate) fn gen_key(identity: String, key_kind: EccKind, validity: Duration) -> Result<String, ()> {
+pub(crate) fn gen_key(identity: String, key_kind: EccKind, creation: DateTime<Utc>, validity: Duration) -> Result<String, ()> {
 
     let onlykey = match OnlyKey::hid_connect().unwrap() {
         Some(ok) => ok,
@@ -39,10 +39,6 @@ pub(crate) fn gen_key(identity: String, key_kind: EccKind, validity: Duration) -
     
     let encryption_key = onlykey.pubkey(&decrypt_key_info).unwrap();
 
-    println!("You will now be asked twice to authorize two signing operation.
-If you have enabled 'challenge mode' for derived key, you will have to enter two 3-digit challenges.
-Press Enter when you are ready to handle the signature operation.");
-
     std::io::stdin().read_line(&mut String::new()).unwrap();
 
     // Generating a [Transferable Public Key](https://www.rfc-editor.org/rfc/rfc4880#section-11.1)
@@ -62,14 +58,15 @@ Press Enter when you are ready to handle the signature operation.");
             EccKind::Ed25519 => Mpi::new_from_ed25519(&verifying_key),
             EccKind::Nist256 => Mpi::new_from_nistp(&verifying_key),
             EccKind::Secp256 => Mpi::new_from_secp(&verifying_key),
-        }
+        },
+        creation
     );
     let primary_key_packet = gen_packet(PacketTag::PublicKey, &pubkey_body);
 
     let user_id_body = gen_user_id_body(&identity);
     let primary_user_id_packet = gen_packet(PacketTag::UserId, &user_id_body);
 
-    let user_id_signature_body = gen_user_id_signature_body(&pubkey_body, &user_id_body, signature_algo, validity, &onlykey, &sign_key_info);
+    let user_id_signature_body = gen_user_id_signature_body(&pubkey_body, &user_id_body, signature_algo, creation, validity, &onlykey, &sign_key_info);
     let user_id_signature_packet = gen_packet(PacketTag::Signature, &user_id_signature_body);
 
     let subkey_body = gen_public_key_body(
@@ -79,11 +76,12 @@ Press Enter when you are ready to handle the signature operation.");
             EccKind::Ed25519 => Mpi::new_from_ed25519(&encryption_key),
             EccKind::Nist256 => Mpi::new_from_nistp(&encryption_key),
             EccKind::Secp256 => Mpi::new_from_secp(&encryption_key),
-        }
+        },
+        creation
     );
     let subkey_packet = gen_packet(PacketTag::PublicSubkey, &subkey_body);
 
-    let subkey_signature_body = gen_subkey_signature_body(&pubkey_body, &subkey_body,signature_algo, validity, &onlykey, &sign_key_info);
+    let subkey_signature_body = gen_subkey_signature_body(&pubkey_body, &subkey_body,signature_algo, creation, validity, &onlykey, &sign_key_info);
     let subkey_signature_packet = gen_packet(PacketTag::Signature, &subkey_signature_body);
 
     let mut transferable_key = primary_key_packet;
@@ -421,9 +419,9 @@ fn encode_len(len: usize) -> Vec<u8> {
 /// Can be used for primary key and subkey.
 /// 
 /// https://www.rfc-editor.org/rfc/rfc4880#section-5.5.2
-fn gen_public_key_body(algo: PublicKeyAlgorithm, key_kind: EccKind, key: Mpi) -> Vec<u8> {
+fn gen_public_key_body(algo: PublicKeyAlgorithm, key_kind: EccKind, key: Mpi, creation: DateTime<Utc>) -> Vec<u8> {
     let mut packet = vec![4];
-    let created = Utc::now().timestamp() as u32;
+    let created = creation.timestamp() as u32;
     packet.extend_from_slice(&created.to_be_bytes());
     packet.push(algo.as_int());
     match algo {
@@ -468,7 +466,7 @@ fn gen_user_id_body(identity: &str) -> Vec<u8> {
 }
 
 /// https://www.rfc-editor.org/rfc/rfc4880#section-5.2.3
-fn gen_user_id_signature_body(key_packet_body: &[u8], user_id_body: &[u8], algo: PublicKeyAlgorithm, expire: Duration, onlykey: &OnlyKey, sign_key: &KeyInfo) -> Vec<u8> {
+fn gen_user_id_signature_body(key_packet_body: &[u8], user_id_body: &[u8], algo: PublicKeyAlgorithm, creation: DateTime<Utc>, expire: Duration, onlykey: &OnlyKey, sign_key: &KeyInfo) -> Vec<u8> {
     let mut packet = vec![
         4, // Version
         0x13, // Positive certification
@@ -477,7 +475,7 @@ fn gen_user_id_signature_body(key_packet_body: &[u8], user_id_body: &[u8], algo:
         ];
     
     let hashed_subpackets: Vec<SignatureSubpacket> = vec![
-        SignatureSubpacket::SignatureCreationTime(Utc::now()),
+        SignatureSubpacket::SignatureCreationTime(creation),
         SignatureSubpacket::KeyFlags(vec![
             KeyFlags::Signature,
             KeyFlags::Certification,
@@ -557,7 +555,7 @@ fn gen_user_id_signature_body(key_packet_body: &[u8], user_id_body: &[u8], algo:
     packet
 }
 
-fn gen_subkey_signature_body(key_packet_body: &[u8], subkey_body: &[u8], algo: PublicKeyAlgorithm, expire: Duration, onlykey: &OnlyKey, sign_key: &KeyInfo) -> Vec<u8> {
+fn gen_subkey_signature_body(key_packet_body: &[u8], subkey_body: &[u8], algo: PublicKeyAlgorithm, creation: DateTime<Utc>, expire: Duration, onlykey: &OnlyKey, sign_key: &KeyInfo) -> Vec<u8> {
     let mut packet = vec![
         4, // Version
         0x18, // Subkey Binding Signature
@@ -566,7 +564,7 @@ fn gen_subkey_signature_body(key_packet_body: &[u8], subkey_body: &[u8], algo: P
         ];
 
     let hashed_subpackets: Vec<SignatureSubpacket> = vec![
-        SignatureSubpacket::SignatureCreationTime(Utc::now()),
+        SignatureSubpacket::SignatureCreationTime(creation),
         SignatureSubpacket::KeyFlags(vec![
             KeyFlags::EncryptionComm,
             KeyFlags::EncryptionStor,
