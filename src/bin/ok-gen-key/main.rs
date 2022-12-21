@@ -1,4 +1,4 @@
-use std::{process::{Command, Stdio}, io::Write};
+use std::{process::{Command, Stdio}, io::Write, path::PathBuf, fs::File};
 
 use anyhow::{Result, bail, anyhow};
 
@@ -22,12 +22,8 @@ use crate::gen_key::gen_key;
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
 struct Args {
-    /*/// Set the name of the home directory.
-    /// If not given, the homedir will be automatically chosen with `gpgconf`.
-    #[clap(long)]
-    homedir: Option<PathBuf>,*/
-
     /// Identity from which to generate the new key.
+    /// 
     /// "My Name <my.name@example.com>", "My Name" and "asdf" are all valid identity producing
     /// different keys.
     /// If given, the key will be generated without asking for any parameter. These must be given
@@ -55,6 +51,13 @@ struct Args {
     /// This date correspond to the UNIX time.
     #[arg(short, long, value_parser = parse_time)]
     time: Option<DateTime<Local>>,
+
+    /// Path to the file where to write the newly generated key.
+    /// 
+    /// As the produced key is ASCII-armored, it is recommended to end the filename with '.asc'.
+    /// If not given the generated key is printed to stdout.
+    #[arg(short, long)]
+    output: Option<PathBuf>,
 }
 
 fn main() {
@@ -243,8 +246,16 @@ Press Enter when you are ready to continue.");
  
     let temp = DummySettings {keyinfo: vec![sign_key_info, decrypt_key_info]};
 
+    match args.output {
+        Some(filename) => {
+            let mut file = File::create(&filename).unwrap_or_else(|_| panic!("Unable to open file {}", filename.display()));
+            file.write_all(armored_key.as_bytes()).unwrap_or_else(|_| panic!("Unable to write key to file {}", filename.display()));
+        },
+        None => {
     println!("Your public key:\n{}", armored_key);
     println!();
+        },
+    }
     println!("Please add the following lines to your 'ok-agent.toml':");
     println!("{}", toml::to_string(&temp).unwrap());
 
