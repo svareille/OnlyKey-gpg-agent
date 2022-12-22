@@ -61,7 +61,7 @@ struct Args {
 
     /// Set the path of the gpg's home directory.
     /// 
-    /// This option is used with --export, --write-ok-agent and --auto.
+    /// This option is used with --export-key, --export-config and --auto.
     #[arg(long)]
     homedir: Option<PathBuf>,
 
@@ -74,7 +74,7 @@ struct Args {
     /// Automatically export the generated public key in the gpg keyring and append the
     /// OnlyKey configuration to the `ok-agent.toml` file.
     /// 
-    /// This option have the same effect as both --export and --write-ok-agent.
+    /// This option have the same effect as both --export-key and --export-config.
     /// If --homedir is given it will be used as the directory containing the gpg keyring and the
     /// `ok-agent.toml` file.
     #[arg(short, long)]
