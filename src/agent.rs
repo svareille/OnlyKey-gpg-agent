@@ -1,4 +1,4 @@
-use std::{time::Duration, path::PathBuf, process::Command, sync::{Mutex, Arc}};
+use std::{time::Duration, path::PathBuf, sync::{Mutex, Arc}};
 
 use log::{trace, debug, info, error, warn};
 use anyhow::{Result, bail};
@@ -584,13 +584,6 @@ impl MyAgent {
         }
         Ok(())
     }
-}
-
-pub fn get_homedir() -> Result<PathBuf> {
-    let output = Command::new("gpgconf")
-        .args(["--list-dirs", "homedir"])
-        .output()?;
-    Ok(PathBuf::from(String::from_utf8(output.stdout)?.trim()))
 }
 
 /// Parse an S-Expression containing ECDH parts and return the remote public key

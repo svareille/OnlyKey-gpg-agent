@@ -21,6 +21,7 @@ mod agent;
 mod config;
 mod csexp;
 mod onlykey;
+mod utils;
 
 fn main() -> Result<()> {
 
@@ -41,7 +42,7 @@ fn main() -> Result<()> {
 
     let mut config_file = match args.homedir.as_deref() {
         Some(home) => home.to_owned(),
-        None => agent::get_homedir().unwrap_or_default(),
+        None => utils::get_homedir().unwrap_or_default(),
     };
 
     config_file.push("ok-agent.toml");
