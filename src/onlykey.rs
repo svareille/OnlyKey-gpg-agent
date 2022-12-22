@@ -421,12 +421,12 @@ impl OnlyKey {
             KeyInfoError::UnkwnownSlotName(slot) => OnlyKeyError::UnkwnownSlotName(slot)
         })?;
 
+        let data = OnlyKey::data_to_send(ciphertext, key);
+
         // Time to wait for user interaction
         let wait_for = Duration::from_secs(22);
 
-        debug!("Sending {} bytes of ciphertext", ciphertext.len());
-
-        self.send_with_slot(OKDECRYPT, slot, ciphertext)?;
+        self.send_with_slot(OKDECRYPT, slot, &data)?;
 
         let start = Instant::now();
         let mut result = Vec::new();
