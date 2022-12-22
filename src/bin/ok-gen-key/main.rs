@@ -1,11 +1,11 @@
-use std::{process::{Command, Stdio}, io::Write, path::PathBuf, fs::File};
+use std::{process::{Command, Stdio}, io::Write, path::PathBuf, fs::{File, OpenOptions}};
 
 use anyhow::{Result, bail, anyhow};
 
 use chrono::{DateTime, Local, Duration, NaiveDate, TimeZone};
 use clap::{Parser, ValueEnum};
 
-use ok_gpg_agent::config::{KeyInfo, EccType, DerivedKeyInfo};
+use ok_gpg_agent::{config::{KeyInfo, EccType, DerivedKeyInfo}, utils};
 use regex::Regex;
 use lazy_static::lazy_static;
 use serde::Serialize;
@@ -79,6 +79,13 @@ struct Args {
     /// `ok-agent.toml` file.
     #[arg(short, long)]
     auto: bool,
+
+    /// Append the generated configuration to the `ok-agent.toml` file.
+    /// 
+    /// If a path to a file is given, this file will be written. Otherwise if --homedir is given it
+    /// will be used as the directory containing the `ok-agent.toml` file.
+    #[arg(short='x', long, name="FILE")]
+    export_config: Option<Option<PathBuf>>,
 }
 
 fn main() {
@@ -263,13 +270,8 @@ Press Enter when you are ready to continue.");
         },
         keygrip: keygrips[1].clone(),
     });
-
-    #[derive(Serialize)]
-    struct DummySettings {
-        keyinfo: Vec<KeyInfo>,
-    }
  
-    let temp = DummySettings {keyinfo: vec![sign_key_info, decrypt_key_info]};
+    let dummy_settings = DummySettings {keyinfo: vec![sign_key_info, decrypt_key_info]};
 
     match args.output {
         Some(filename) => {
@@ -277,13 +279,34 @@ Press Enter when you are ready to continue.");
             file.write_all(armored_key.as_bytes()).unwrap_or_else(|_| panic!("Unable to write key to file {}", filename.display()));
         },
         None => {
-    println!("Your public key:\n{}", armored_key);
-    println!();
+            println!("Your public key:\n{}", armored_key);
+            println!();
         },
     }
-    println!("Please add the following lines to your 'ok-agent.toml':");
-    println!("{}", toml::to_string(&temp).unwrap());
+    
+    if args.export_config.is_some() || args.auto {
+        match args.export_config {
+            Some(Some(filename)) => append_config_to_file(&dummy_settings, filename).unwrap(),
+            Some(None) | None => {
+                let mut config_file = match args.homedir.as_deref() {
+                    Some(home) => home.to_owned(),
+                    None => utils::get_homedir().unwrap_or_default(),
+                };
+            
+                config_file.push("ok-agent.toml");
+                append_config_to_file(&dummy_settings, config_file).unwrap();
+            },
+        }
+    } else {
+        println!("Please add the following lines to your 'ok-agent.toml':");
+        println!("{}", toml::to_string(&dummy_settings).unwrap());
+    }
 
+}
+
+#[derive(Serialize)]
+struct DummySettings {
+    keyinfo: Vec<KeyInfo>,
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
@@ -432,6 +455,16 @@ fn gpg_export_key(key: &str, homedir: &Option<PathBuf>) -> Result<()> {
     } else {
         Err(anyhow!("Failed to import key into the gpg keyring"))
     }
+}
+
+/// Append the given settings to the provided TOML file.
+fn append_config_to_file(dummy_settings: &DummySettings, filename: PathBuf) -> Result<()> {
+    let mut file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&filename).map_err(|e| anyhow!("Unable to open file {}: {:?}", filename.display(), e))?;
+    file.write_all(b"\n\n")?;
+    file.write_all(toml::to_string(&dummy_settings).unwrap().as_bytes()).map_err(|e| anyhow!("Unable to write settings to file {}: {:?}", filename.display(), e))
 }
 
 #[cfg(windows)]
