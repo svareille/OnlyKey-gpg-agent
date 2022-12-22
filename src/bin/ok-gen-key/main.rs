@@ -58,6 +58,27 @@ struct Args {
     /// If not given the generated key is printed to stdout.
     #[arg(short, long)]
     output: Option<PathBuf>,
+
+    /// Set the path of the gpg's home directory.
+    /// 
+    /// This option is used with --export, --write-ok-agent and --auto.
+    #[arg(long)]
+    homedir: Option<PathBuf>,
+
+    /// Export the generated pubic key in the gpg keyring.
+    /// 
+    /// The export is done with the `gpg` command. If --homedir is given it will be passed to `gpg`.
+    #[arg(short, long)]
+    export_key: bool,
+    
+    /// Automatically export the generated public key in the gpg keyring and append the
+    /// OnlyKey configuration to the `ok-agent.toml` file.
+    /// 
+    /// This option have the same effect as both --export and --write-ok-agent.
+    /// If --homedir is given it will be used as the directory containing the gpg keyring and the
+    /// `ok-agent.toml` file.
+    #[arg(short, long)]
+    auto: bool,
 }
 
 fn main() {
@@ -217,6 +238,10 @@ Press Enter when you are ready to continue.");
     std::io::stdin().read_line(&mut String::new()).unwrap();
 
     let armored_key = gen_key(identity.clone(), key_kind, creation.into(), validity).unwrap();
+
+    if args.export_key || args.auto {
+        gpg_export_key(&armored_key, &args.homedir).unwrap();
+    }
 
     let keygrips = keygrips_from_gpg(&armored_key).unwrap();
 
@@ -382,6 +407,32 @@ fn keygrips_from_gpg(armored_key: &str) -> Result<Vec<String>> {
     }
 }
 
+/// Export the provided key in the gpg's keyring.
+/// 
+/// This operation is an "import" from the point of view of gpg
+/// Needs `gpg` to be installed and accessible.
+fn gpg_export_key(key: &str, homedir: &Option<PathBuf>) -> Result<()> {
+    let mut gpg = Command::new("gpg");
+    gpg.args(["--import",])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit());
+    if let Some(homedir) = homedir {
+        gpg.arg("--homedir").arg(homedir.as_os_str().to_str().expect("Cannot convert homedir path to os path"));
+    }
+    let mut gpg = gpg.spawn()?;
+    gpg.stdin
+        .as_mut()
+        .ok_or_else(||anyhow!("Child process stdin has not been captured!"))?
+        .write_all(key.as_bytes())?;
+    let output = gpg.wait()?;
+
+    if output.success() {
+        Ok(())
+    } else {
+        Err(anyhow!("Failed to import key into the gpg keyring"))
+    }
+}
 
 #[cfg(windows)]
 #[macro_export]
