@@ -1,4 +1,4 @@
-use std::{process::{Command, Stdio}, io::Write, path::PathBuf, fs::{File, OpenOptions}};
+use std::{process::{Command, Stdio}, io::Write, path::{PathBuf, Path}, fs::{File, OpenOptions}};
 
 use anyhow::{Result, bail, anyhow};
 
@@ -286,7 +286,10 @@ Press Enter when you are ready to continue.");
     
     if args.export_config.is_some() || args.auto {
         match args.export_config {
-            Some(Some(filename)) => append_config_to_file(&dummy_settings, filename).unwrap(),
+            Some(Some(filename)) => {
+                append_config_to_file(&dummy_settings, &filename).unwrap();
+                println!("Configuration written to {}", filename.display());
+            },
             Some(None) | None => {
                 let mut config_file = match args.homedir.as_deref() {
                     Some(home) => home.to_owned(),
@@ -294,7 +297,8 @@ Press Enter when you are ready to continue.");
                 };
             
                 config_file.push("ok-agent.toml");
-                append_config_to_file(&dummy_settings, config_file).unwrap();
+                append_config_to_file(&dummy_settings, &config_file).unwrap();
+                println!("Configuration written to {}", config_file.display());
             },
         }
     } else {
@@ -458,7 +462,7 @@ fn gpg_export_key(key: &str, homedir: &Option<PathBuf>) -> Result<()> {
 }
 
 /// Append the given settings to the provided TOML file.
-fn append_config_to_file(dummy_settings: &DummySettings, filename: PathBuf) -> Result<()> {
+fn append_config_to_file(dummy_settings: &DummySettings, filename: &Path) -> Result<()> {
     let mut file = OpenOptions::new()
         .create(true)
         .append(true)
