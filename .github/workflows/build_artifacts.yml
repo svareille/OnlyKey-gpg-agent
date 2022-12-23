@@ -41,18 +41,15 @@ jobs:
         run: cargo build --release
       - name: Creating ./bin directory
         run: mkdir -p bin
-      - name: Renaming binaries [Windows]
+      - name: Zip Windows binaries
         if: matrix.os == 'windows-latest'
-        run: mv target/release/ok-gpg-agent.exe bin/ok-gpg-agent-${{ matrix.build_target }}.exe
-      - name: Renaming binaries [Others]
-        if: matrix.os != 'windows-latest'
-        run: mv target/release/ok-gpg-agent bin/ok-gpg-agent-${{ matrix.build_target }}
-      - name: Tarball Linux binary
+        run: 7z a -tzip -sdel bin/ok-gpg-agent-${{ matrix.build_target }}.zip bin/*
+      - name: Tarball Linux binaries
         if: matrix.os == 'ubuntu-latest'
-        run: tar --remove-files -czf bin/ok-gpg-agent-${{ matrix.build_target }}{.tar.gz,}
-      - name: Zip MacOS binary
+        run: tar --remove-files -czf bin/ok-gpg-agent-${{ matrix.build_target }}.tar.gz bin/*
+      - name: Zip MacOS binaries
         if: matrix.os == 'macos-latest'
-        run: zip -9rm bin/ok-gpg-agent-${{ matrix.build_target }}{.zip,}
+        run: zip -9rm bin/ok-gpg-agent-${{ matrix.build_target }}.zip bin/*
       - name: Upload artifacts
         uses: actions/upload-artifact@v3
         with:

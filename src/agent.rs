@@ -1,17 +1,16 @@
-use std::{time::Duration, path::PathBuf, process::Command, sync::{Mutex, Arc}};
+use std::{time::Duration, path::PathBuf, sync::{Mutex, Arc}};
 
 use log::{trace, debug, info, error, warn};
 use anyhow::{Result, bail};
 use thiserror::Error;
 use num::FromPrimitive;
 use num_derive::FromPrimitive;
-use sha2::{Sha256, Digest};
 
-use crate::{assuan::{AssuanClient, AssuanServer, AssuanCommand, AssuanResponse, self, ServerError, ClientError}, config::{KeyInfo, KeyType}, csexp::Sexp};
+use crate::{assuan::{AssuanClient, AssuanServer, AssuanCommand, AssuanResponse, self, ServerError, ClientError}, csexp::Sexp};
 
-use crate::config::Settings;
+use ok_gpg_agent::config::{Settings, KeyInfo, KeyType};
 
-use crate::onlykey::{OnlyKey, OnlyKeyError};
+use ok_gpg_agent::onlykey::{OnlyKey, OnlyKeyError};
 
 pub fn handle_client(mut client: AssuanClient, mut server: AssuanServer, my_agent: Arc<Mutex<MyAgent>>) -> Result<bool> {
     loop {
@@ -146,6 +145,7 @@ pub fn handle_client(mut client: AssuanClient, mut server: AssuanServer, my_agen
                             client.send(AssuanResponse::Inquire { keyword: "HASHVAL".to_owned(), parameters: None })?;
                         } else {
                             debug!("Signing data");
+                            /*server.send(AssuanCommand::Command { command: command.clone(), parameters: parameters.clone()})?;*/
                             match my_agent.sign_data() {
                                 Ok(sig) => {
                                     debug!("Sending signature");
@@ -425,18 +425,18 @@ impl MyAgent {
     }
 
     pub fn get_known_keygrips(&self) -> Vec<String> {
-        self.settings.keyinfo.iter().map(|info| info.keygrip.clone()).collect()
+        self.settings.keyinfo.iter().map(|info| info.keygrip()).collect()
     }
 
     pub fn have_key(&self, keygrip: &str) -> bool {
-        self.settings.keyinfo.iter().any(|info| info.keygrip == keygrip)
+        self.settings.keyinfo.iter().any(|info| info.keygrip() == keygrip)
     }
 
     /// Select the key for future operations.
     /// Returns `true` if the key exists, `false` otherwise.
     /// 
     pub fn select_key(&mut self, keygrip: &str) -> bool {
-        if let Some(info) = self.settings.keyinfo.iter().find(|info| info.keygrip == keygrip) {
+        if let Some(info) = self.settings.keyinfo.iter().find(|info| info.keygrip() == keygrip) {
             self.key = Some(info.clone());
             return true;
         }
@@ -460,7 +460,7 @@ impl MyAgent {
 
                     let signature = ok.lock().unwrap().sign(&data.data, &sign_key)?;
                     match sign_key.r#type() {
-                        Ok(KeyType::Ecc) => {
+                        Ok(KeyType::Ecc(_)) => {
                             if signature.len() != 64 {
                                 error!("Signature length is {}, expected 64", signature.len());
                                 return Err(AgentError::InvalidSignatureLength(signature.len()));
@@ -469,6 +469,7 @@ impl MyAgent {
                         Ok(KeyType::Rsa(size)) => {
                             if signature.len() != size/8 {
                                 error!("Signature length is {}, expected {}", signature.len(), size/8);
+                                debug!("Signature: {:?}", signature);
                                 return Err(AgentError::InvalidSignatureLength(signature.len()));
                             }
                         }
@@ -479,7 +480,7 @@ impl MyAgent {
                     }
 
                     let sexp = match sign_key.r#type() {
-                        Ok(KeyType::Ecc) => {
+                        Ok(KeyType::Ecc(_)) => {
                             Sexp::List(vec![
                                 Sexp::Atom(b"sig-val".to_vec()),
                                 Sexp::List(vec![
@@ -532,7 +533,7 @@ impl MyAgent {
             if let Some(ok) = self.onlykey.clone() {
                 debug!("Data to decrypt: {:?}", data);
                 let ciphertext = match key.r#type() {
-                    Ok(KeyType::Ecc) => {
+                    Ok(KeyType::Ecc(_)) => {
                         parse_ecdh(&data).map_err(|_| AgentError::Other)?
                     },
                     Ok(KeyType::Rsa(_)) => {
@@ -564,11 +565,7 @@ impl MyAgent {
     }
 
     fn display_challenge(&mut self, data: &[u8]) -> Result<(), AgentError> {
-        // Compute challenge
-        let h1 = Sha256::new()
-        .chain_update(data)
-        .finalize();
-        let (b1, b2, b3) = (OnlyKey::get_button(h1[0]), OnlyKey::get_button(h1[15]), OnlyKey::get_button(h1[31]));
+        let (b1, b2, b3) = OnlyKey::compute_challenge(data);
         let challenge_str = format!("Enter the 3 digit challenge code on OnlyKey to authorize operation:\n{} {} {}", b1, b2, b3);
         if self.settings.challenge {
             info!("{}", challenge_str);
@@ -587,13 +584,6 @@ impl MyAgent {
         }
         Ok(())
     }
-}
-
-pub fn get_homedir() -> Result<PathBuf> {
-    let output = Command::new("gpgconf")
-        .args(["--list-dirs", "homedir"])
-        .output()?;
-    Ok(PathBuf::from(String::from_utf8(output.stdout)?.trim()))
 }
 
 /// Parse an S-Expression containing ECDH parts and return the remote public key

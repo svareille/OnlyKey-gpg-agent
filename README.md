@@ -45,7 +45,6 @@ the official GPG agent for OnlyKey.
 | Works on Linux and Mac (Windows soon?). | Works on Windows, Linux and Mac (not tested). |
 | Separate standard computer-hosted keys and onlykey-hosted keys, so that both cannot be used at the same time. | Interract with the original gpg-agent so that both computer-hosted and onlykey-hosted keys can be used at the same time. |
 | Need to unset `GNUPGHOME` to use computer-hosted keys. | Don't need to do anything to switch between computer-hosted and onlykey-hosted keys. |
-| Works with derivated keys. | Does not work with derivated keys yet. |
 
 I initially began this project in order to have a way to use my PGP keys from my OnlyKey on Windows,
 while having a seamless experience (not having to use special commands or having to choose between
@@ -55,8 +54,8 @@ something in Rust.
 
 ## Known bugs/limitations
 
-- Signing with an RSA key of 4096 bits does not work. See https://github.com/trustcrypto/libraries/issues/25 for more details.
-- Derived keys are not supported yet.
+- Signing with an RSA key of 4096 bits may not work. See https://github.com/trustcrypto/libraries/issues/25 for more details.
+- ~~Derived keys are not supported yet.~~ Derivated keys are now supported!
 - Following links in socket file on Unix is not yet supported.
 - On some Linux (Debian and derivatives) the gpg-agent is started by systemd (`/usr/lib/systemd/user/gpg-agent.service`).
   There is currently no support for this configuration. See [Troubleshooting/systemd](#systemd).
@@ -79,6 +78,8 @@ $ gpg-connect-agent KILLAGENT /bye
 ```
 
 ## Configure
+
+### Agent
 
 Create the file `ok-agent.toml` in the homedir of gpg. This file will contain the configuration of
 the agent.
@@ -103,6 +104,18 @@ keygrip = "5B3E86D2F867BA1135F3754CAE4F82409F8D0AE6"
 size = 4096
 ```
 
+For derivated key the `slot` field must not be present. Instead `identity` and `ecc_type` are required:
+
+```toml
+[[keyinfo]]
+identity = "My identity (comment) <my.dentity@example.com>"
+ecc_type = "Ed25519"
+keygrip = "7787EDEE866D4A3534BF5B5B9E20A3F7D616AF50"
+```
+
+`ecc_type` can be any of `Ed25519` (signature key), `Cv25519` (decryption key), `Nist256P1` and
+`Secp256K1`.
+
 To obtain the keygrip of a key, run:
 ```shell
 $ gpg --with-keygrip -k
@@ -110,7 +123,7 @@ $ gpg --with-keygrip -k
 
 Each private key must have its own `[[keyinfo]]` section.
 
-### Options of `ok-agent.toml`
+#### Options of `ok-agent.toml`
 
 The possible global options of `ok-agent.toml` are:
 
@@ -136,6 +149,79 @@ keygrip = "BBD680E5AD45D0FEDD2E90A34F1CEC9A6744D096"
 slot = "ECC2"
 keygrip = "F897F717026CAB4E3CE8E5055F527B260D012824"
 
+```
+
+### Derivated key creation
+
+To generate (or re-generate) a derivated key, use the `ok-gen-key` command-line tool.
+
+This will construct a public key pair from the given identity. The generation is roughly the same as
+the official onlykey-gpg: the same identity string will generate the same public key, with the
+exception of accentuated or non-ASCII identity. For exemple, the official onlykey-gpg will produce
+the same public key for `"aeiou"` and `"àéïòù"` whereas `ok-gen-key` will produce two different
+keys.
+
+Key generation can be done interactively or using command-line options.
+
+```console
+Usage: ok-gen-key.exe [OPTIONS]
+
+Options:
+      --identity <IDENTITY>
+          Identity from which to generate the new key.
+
+          "My Name <my.name@example.com>", "My Name" and "asdf" are all valid identity producing different keys. If given, the key will be generated without asking for any parameter. These must be given as command line arguments.
+
+  -c, --curve <KEY_KIND>
+          Kind of key to generate. Defaults to ed25519
+
+          [possible values: ed25519, nist256, secp256]
+
+      --validity <VALIDITY>
+          How long the key should be valid. Defaults to 2 years.
+
+                   0 = key does not expire
+                <n>  = key expires in n days
+                <n>w = key expires in n weeks
+                <n>m = key expires in n months
+                <n>y = key expires in n years
+
+  -t, --time <TIME>
+          Generate the key with a custom creation date.
+
+          This allows for rebuilding the exact same public key as a previous generation. This date correspond to the UNIX time.
+
+  -o, --output <OUTPUT>
+          Path to the file where to write the newly generated key.
+
+          As the produced key is ASCII-armored, it is recommended to end the filename with '.asc'. If not given the generated key is printed to stdout.        
+
+      --homedir <HOMEDIR>
+          Set the path of the gpg's home directory.
+
+          This option is used with --export-key, --export-config and --auto.
+
+  -e, --export-key
+          Export the generated pubic key in the gpg keyring.
+
+          The export is done with the `gpg` command. If --homedir is given it will be passed to `gpg`.
+
+  -a, --auto
+          Automatically export the generated public key in the gpg keyring and append the OnlyKey configuration to the `ok-agent.toml` file.
+
+          This option have the same effect as both --export-key and --export-config. If --homedir is given it will be used as the directory containing the gpg 
+keyring and the `ok-agent.toml` file.
+
+  -x, --export-config [<FILE>]
+          Append the generated configuration to the `ok-agent.toml` file.
+
+          If a path to a file is given, this file will be written. Otherwise if --homedir is given it will be used as the directory containing the `ok-agent.toml` file.
+
+  -h, --help
+          Print help information (use `-h` for a summary)
+
+  -V, --version
+          Print version information
 ```
 
 ## Troubleshooting
@@ -177,7 +263,7 @@ agent_program = "/usr/bin/gpg-agent-orig"
 
 However systemd launches gpg-agent with the `--supervised` option, which is not yet supported.
 
-### The OnlyKey is not recognized
+### OnlyKey not recognized
 
 On Linux, don't forget to follow the [Using OnlyKey with Linux](https://docs.onlykey.io/linux.html)
 guide to communicate with OnlyKey.

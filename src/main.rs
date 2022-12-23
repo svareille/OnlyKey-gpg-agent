@@ -10,17 +10,16 @@ use log::{info, debug, error, trace, warn};
 
 #[cfg(not(windows))]
 use daemonize::Daemonize;
+use ok_gpg_agent::{utils, config::Settings};
 
 #[macro_use]
 extern crate lazy_static;
 
-use crate::{assuan::{AssuanListener, AssuanCommand, AssuanClient, AssuanServer, AssuanResponse}, agent::{handle_client, MyAgent, ServerResponseFilter}, config::Settings};
+use crate::{assuan::{AssuanListener, AssuanCommand, AssuanClient, AssuanServer, AssuanResponse}, agent::{handle_client, MyAgent, ServerResponseFilter}};
 
 mod assuan;
 mod agent;
-mod config;
 mod csexp;
-mod onlykey;
 
 fn main() -> Result<()> {
 
@@ -41,7 +40,7 @@ fn main() -> Result<()> {
 
     let mut config_file = match args.homedir.as_deref() {
         Some(home) => home.to_owned(),
-        None => agent::get_homedir().unwrap_or_default(),
+        None => utils::get_homedir().unwrap_or_default(),
     };
 
     config_file.push("ok-agent.toml");
