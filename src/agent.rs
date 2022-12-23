@@ -6,11 +6,11 @@ use thiserror::Error;
 use num::FromPrimitive;
 use num_derive::FromPrimitive;
 
-use crate::{assuan::{AssuanClient, AssuanServer, AssuanCommand, AssuanResponse, self, ServerError, ClientError}, config::{KeyInfo, KeyType}, csexp::Sexp};
+use crate::{assuan::{AssuanClient, AssuanServer, AssuanCommand, AssuanResponse, self, ServerError, ClientError}, csexp::Sexp};
 
-use crate::config::Settings;
+use ok_gpg_agent::config::{Settings, KeyInfo, KeyType};
 
-use crate::onlykey::{OnlyKey, OnlyKeyError};
+use ok_gpg_agent::onlykey::{OnlyKey, OnlyKeyError};
 
 pub fn handle_client(mut client: AssuanClient, mut server: AssuanServer, my_agent: Arc<Mutex<MyAgent>>) -> Result<bool> {
     loop {
