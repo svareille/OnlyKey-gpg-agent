@@ -41,6 +41,16 @@ jobs:
         run: cargo build --release
       - name: Creating ./bin directory
         run: mkdir -p bin
+      - name: Moving binaries [Windows]
+        if: matrix.os == 'windows-latest'
+        run: |
+          mv target/release/ok-gpg-agent.exe bin/
+          mv target/release/ok-gen-key.exe bin/
+      - name: Moving binaries [Other]
+        if: matrix.os != 'windows-latest'
+        run: |
+          mv target/release/ok-gpg-agent bin/
+          mv target/release/ok-gen-key bin/
       - name: Zip Windows binaries
         if: matrix.os == 'windows-latest'
         run: 7z a -tzip -sdel bin/ok-gpg-agent-${{ matrix.build_target }}.zip bin/*
