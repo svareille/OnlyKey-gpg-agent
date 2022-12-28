@@ -1,6 +1,8 @@
-use std::{net::Shutdown, path::{PathBuf, Path}, io::{Write, Read, BufWriter, BufReader, BufRead}, process::{Command, Child, Stdio, ChildStdout, ChildStdin}, sync::{Arc, Mutex}, fs::remove_file};
+use std::{net::Shutdown, path::{PathBuf, Path}, io::{Write, Read, BufWriter, BufReader, BufRead}};
+use std::{process::{Command, Child, Stdio, ChildStdout, ChildStdin}, sync::{Arc, Mutex}, fs, os::unix::prelude::FileTypeExt};
 
 use log::{info, trace, error, debug};
+use regex::Regex;
 use thiserror::Error;
 
 mod stream;
@@ -94,13 +96,37 @@ pub struct AssuanListener {
 #[cfg(unix)]
 impl AssuanListener {
     pub fn new(delete_socket: bool) -> Result<Self, std::io::Error> {
-        let agent_socket = get_socket_file_path()?;
+        let mut agent_socket = get_socket_file_path()?;
         info!("Socket file is {:?}", agent_socket);
 
-        // TODO: Follow link in socket if any
+        // Follow link in socket if any
+
+        let meta_socket = fs::metadata(&agent_socket)?;
+        let file_type = meta_socket.file_type();
+
+        if file_type.is_socket() {
+            debug!("Socket file is a Unix socket, nothing to do.");
+        } else if file_type.is_file() {
+            debug!("Socket file is a regular file, following link...");
+            if let Ok(content) = fs::read_to_string(&agent_socket) {
+                let re = Regex::new(
+                    r#"%Assuan%
+socket=(.*)"#,
+                ).unwrap();
+                if let Some(cap) = re.captures(&content) {
+                    agent_socket = PathBuf::from(&cap[1]);
+                }
+            }
+        }
 
         if delete_socket {
-            remove_file(&agent_socket)?;
+            match fs::remove_file(&agent_socket) {
+                Ok(()) => {},
+                Err(e) => match e.kind() {
+                    std::io::ErrorKind::NotFound => {},
+                    _ => return Err(e),
+                },
+            }
         }
 
         let listener = UnixListener::bind(&agent_socket)?;
