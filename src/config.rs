@@ -6,6 +6,7 @@ use config::{ConfigError, Config, File};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 const fn _default_true() -> bool { true }
+const fn _default_false() -> bool { false }
 
 const fn _default_log_level() -> log::LevelFilter { log::LevelFilter::Info}
 
@@ -177,6 +178,9 @@ pub struct Settings {
     /// Path to the gpg-agent to use
     #[serde(default)]
     pub agent_program: PathBuf,
+    /// Delete socket if already present
+    #[serde(default = "_default_false")]
+    pub delete_socket: bool,
     /// Known keys
     #[serde(default)]
     pub keyinfo: Vec<KeyInfo>,

@@ -1,4 +1,4 @@
-use std::{net::Shutdown, path::{PathBuf, Path}, io::{Write, Read, BufWriter, BufReader, BufRead}, process::{Command, Child, Stdio, ChildStdout, ChildStdin}, sync::{Arc, Mutex}};
+use std::{net::Shutdown, path::{PathBuf, Path}, io::{Write, Read, BufWriter, BufReader, BufRead}, process::{Command, Child, Stdio, ChildStdout, ChildStdin}, sync::{Arc, Mutex}, fs::remove_file};
 
 use log::{info, trace, error, debug};
 use thiserror::Error;
@@ -60,7 +60,7 @@ pub struct AssuanListener {
 
 #[cfg(windows)]
 impl AssuanListener {
-    pub fn new() -> Result<Self, std::io::Error> {
+    pub fn new(_delete_socket: bool) -> Result<Self, std::io::Error> {
         let listener = TcpListener::bind(("127.0.0.1", 0))?;
         info!("Listening on port {}", listener.local_addr()?.port());
 
@@ -93,11 +93,15 @@ pub struct AssuanListener {
 
 #[cfg(unix)]
 impl AssuanListener {
-    pub fn new() -> Result<Self, std::io::Error> {
+    pub fn new(delete_socket: bool) -> Result<Self, std::io::Error> {
         let agent_socket = get_socket_file_path()?;
         info!("Socket file is {:?}", agent_socket);
 
         // TODO: Follow link in socket if any
+
+        if delete_socket {
+            remove_file(&agent_socket)?;
+        }
 
         let listener = UnixListener::bind(&agent_socket)?;
 

@@ -133,6 +133,8 @@ The possible global options of `ok-agent.toml` are:
   `"info"`, `"debug"` or `"trace"`. Default to `"info"`.
 - `agent_program`: path to the original *gpg-agent*. If `""`, the agent advertized by `gpg-conf`
   will be used. Default to `""`.
+- `delete_socket`: boolean indicating if the Unix socket must be deleted if already present. Only
+  used on Unix. Default to `"false"`.
 
 Theses options are optional.
 

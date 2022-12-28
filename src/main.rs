@@ -170,7 +170,7 @@ fn main() -> Result<()> {
     }
 
     info!("Setup listener...");
-    let assuan_listener = AssuanListener::new().map_err(|e| {
+    let assuan_listener = AssuanListener::new(my_agent.lock().unwrap().settings.delete_socket).map_err(|e| {
         error!("Couldn't setup the assuan listener: {:?}", e);
         e
     })?;
