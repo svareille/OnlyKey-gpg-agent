@@ -99,25 +99,36 @@ impl AssuanListener {
         let mut agent_socket = get_socket_file_path()?;
         info!("Socket file is {:?}", agent_socket);
 
-        // Follow link in socket if any
+        
 
-        let meta_socket = fs::metadata(&agent_socket)?;
-        let file_type = meta_socket.file_type();
+        if let Ok(meta_socket) = fs::metadata(&agent_socket) {
+            // Follow link in socket if any
+            let file_type = meta_socket.file_type();
 
-        if file_type.is_socket() {
-            debug!("Socket file is a Unix socket, nothing to do.");
-        } else if file_type.is_file() {
-            debug!("Socket file is a regular file, following link...");
-            if let Ok(content) = fs::read_to_string(&agent_socket) {
-                let re = Regex::new(
-                    r#"%Assuan%
-socket=(.*)"#,
-                ).unwrap();
-                if let Some(cap) = re.captures(&content) {
-                    agent_socket = PathBuf::from(&cap[1]);
+            if file_type.is_socket() {
+                debug!("Socket file is a Unix socket, nothing to do.");
+            } else if file_type.is_file() {
+                debug!("Socket file is a regular file, following link...");
+                if let Ok(content) = fs::read_to_string(&agent_socket) {
+                    let re = Regex::new(
+                        r#"%Assuan%
+    socket=(.*)"#,
+                    ).unwrap();
+                    if let Some(cap) = re.captures(&content) {
+                        let mut socket_path = cap[1].to_owned();
+                        let re = Regex::new(r#"(\$\{([^}]*)})"#).unwrap();
+                        for cap in re.captures_iter(&cap[1]) {
+                            let to_replace = &cap[1];
+                            let var = std::env::var(&cap[2]).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?;
+                            socket_path = socket_path.replace(to_replace, &var);
+                        }
+                        agent_socket = PathBuf::from(&socket_path);
+                        debug!("Real socket file is {}", socket_path);
+                    }
                 }
             }
         }
+        
 
         if delete_socket {
             match fs::remove_file(&agent_socket) {
