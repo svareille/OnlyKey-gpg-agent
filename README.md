@@ -92,7 +92,7 @@ sudo cp /usr/lib/systemd/user/gpg-agent.service /usr/lib/systemd/user/gpg-agent.
 sudo nano /usr/lib/systemd/user/gpg-agent.service
 ```
 
-Restart the service (`sudo systemctl restart gpg-agent`) or kill the agent (`gpg-connect-agent KILLAGENT /bye`).
+Restart the service (`sudo systemctl --user restart gpg-agent`) or kill the agent (`gpg-connect-agent KILLAGENT /bye`).
 
 ## Configure
 
