@@ -1,4 +1,4 @@
-use std::{net::Shutdown, path::{PathBuf, Path}, io::{Write, Read, BufWriter, BufReader, BufRead}};
+use std::{net::Shutdown, path::{PathBuf, Path}, io::{Write, BufWriter, BufReader, BufRead}};
 use std::{process::{Command, Child, Stdio, ChildStdout, ChildStdin}, sync::{Arc, Mutex}, fs, os::unix::prelude::FileTypeExt};
 
 use log::{info, trace, error, debug};
@@ -83,7 +83,7 @@ impl AssuanListener {
     pub fn accept(&self) -> Result<AssuanClient, std::io::Error> {
         let (socket, addr) = self.tcp_listener.accept()?;
         info!("Connection with {}", addr);
-        Ok(AssuanClient { stream: Stream {stream: socket}, nonce: self.nonce })
+        Ok(AssuanClient {reader: BufReader::new(stream), nonce: self.nonce })
     }
 }
 
@@ -149,8 +149,9 @@ impl AssuanListener {
 
     pub fn accept(&self) -> Result<AssuanClient, std::io::Error> {
         let (stream, _) = self.listener.accept()?;
+        let stream = Stream {stream};
         info!("New connection");
-        Ok(AssuanClient { stream: Stream {stream} })
+        Ok(AssuanClient {reader: BufReader::new(stream)})
     }
 }
 
@@ -218,9 +219,8 @@ pub enum AssuanResponse {
 }
 
 pub struct AssuanClient {
-    stream: Stream,
-    //reader: Arc<Mutex<BufReader<Stream>>>,
-    //writer: Arc<Mutex<BufWriter<Stream>>>,
+    //stream: Stream,
+    reader: BufReader<Stream>,
     #[cfg(windows)]
     nonce: [u8; 16],
 }
@@ -237,8 +237,8 @@ impl AssuanClient {
     }
 
     pub fn close(&mut self) -> Result<(), ClientError> {
-        self.stream.flush()?;
-        Ok(self.stream.shutdown(Shutdown::Both)?)
+        self.reader.get_mut().flush()?;
+        Ok(self.reader.get_mut().shutdown(Shutdown::Both)?)
     }
 
     /// Validate the client by checking the nonce.
@@ -269,28 +269,28 @@ impl AssuanClient {
     /// string or
     /// [`ClientError::IOError`] if the underlying operation failed.
     pub fn recv(&mut self) -> Result<AssuanCommand, ClientError> {
-        let mut buf = vec![0u8; LINE_LENGHT];
-        let mut num = 0;
-        let mut last_byte = 0u8;
+        let mut buf = Vec::new();
         trace!("Client reading");
-        while num < LINE_LENGHT && last_byte != b'\n' {
-            num += self.stream.read(&mut buf[num..])?;
-            if num == 0 {
-                return Err(ClientError::Eof);
-            }
-            last_byte = buf[num-1];
+        {
+            self.reader.read_until(b'\n', &mut buf)?;
         }
-        if last_byte == b'\n' {
-            num -= 1;
+        if buf.is_empty() {
+            error!("Got EOF from client");
+            return Err(ClientError::Eof);
         }
-        trace!("Read: {:x?}", &buf[..num]);
-        if let Ok(s) = String::from_utf8(buf[..num].to_vec()) {
+
+        if let Some(b'\n') = buf.last() {
+            buf.pop();
+        }
+
+        trace!("Read: {:x?}", buf);
+        if let Ok(s) = String::from_utf8(buf.clone()) {
             trace!("String: {}", s);
         }
 
-        let command_end = buf.iter().position(|b| *b == b' ').unwrap_or(num);
+        let command_end = buf.iter().position(|b| *b == b' ').unwrap_or(buf.len());
 
-        let (command, parameters) = buf[..num].split_at(command_end);
+        let (command, parameters) = buf.split_at(command_end);
 
         let command = String::from_utf8(command.to_vec()).map_err(|_| ClientError::InvalidCommand(buf.clone()))?;
         // Remove space character at begining
@@ -305,7 +305,6 @@ impl AssuanClient {
                 Ok(AssuanCommand::Reset)
             },
             "END" => {
-                // TODO
                 Ok(AssuanCommand::End)
             },
             "NOP" => {
@@ -331,6 +330,7 @@ impl AssuanClient {
     /// [`ClientError::IOError`] if the underlying operation failed.
     pub fn send(&mut self, data: AssuanResponse) -> Result<(), ClientError> {
         trace!("Sending response {:?}", data);
+        let stream = self.reader.get_mut();
         match data {
             AssuanResponse::Ok(info) => {
                 let mut buf: Vec<u8> = Vec::from(b"OK".as_slice());
@@ -340,7 +340,7 @@ impl AssuanClient {
                 }
                 buf = validate_line(buf);
                 buf.push(b'\n');
-                self.stream.write_all(&buf)?;
+                stream.write_all(&buf)?;
             },
             AssuanResponse::Err { code, description } => {
                 let mut buf: Vec<u8> = Vec::from(b"ERR ".as_slice());
@@ -351,13 +351,13 @@ impl AssuanClient {
                 }
                 buf = validate_line(buf);
                 buf.push(b'\n');
-                self.stream.write_all(&buf)?;
+                stream.write_all(&buf)?;
             },
             AssuanResponse::End => {
                 let mut buf: Vec<u8> = Vec::from(b"END".as_slice());
                 buf = validate_line(buf);
                 buf.push(b'\n');
-                self.stream.write_all(&buf)?;
+                stream.write_all(&buf)?;
             },
             AssuanResponse::Processing { keyword, info } => {
                 if !keyword.starts_with(|c: char| c.is_ascii_alphabetic() || c == '_') {
@@ -371,7 +371,7 @@ impl AssuanClient {
                 }
                 buf = validate_line(buf);
                 buf.push(b'\n');
-                self.stream.write_all(&buf)?;
+                stream.write_all(&buf)?;
             },
             AssuanResponse::Comment(text) => {
                 for line in text.lines() {
@@ -379,7 +379,7 @@ impl AssuanClient {
                     buf.extend_from_slice(line.as_bytes());
                     buf = validate_line(buf);
                     buf.push(b'\n');
-                    self.stream.write_all(&buf)?;
+                    stream.write_all(&buf)?;
                 }
             },
             AssuanResponse::Data(mut data) => {
@@ -395,7 +395,7 @@ impl AssuanClient {
                     buf.extend_from_slice(chunck);
                     buf = validate_line(buf);
                     buf.push(b'\n');
-                    self.stream.write_all(&buf)?;
+                    stream.write_all(&buf)?;
                 }
             },
             AssuanResponse::Inquire { keyword, parameters } => {
@@ -410,12 +410,12 @@ impl AssuanClient {
                 }
                 buf = validate_line(buf);
                 buf.push(b'\n');
-                self.stream.write_all(&buf)?;
+                stream.write_all(&buf)?;
             },
             AssuanResponse::Unknown(mut data) => {
                 data = validate_line(data);
                 data.push(b'\n');
-                self.stream.write_all(&data)?;
+                stream.write_all(&data)?;
             }
         }
         Ok(())
@@ -463,8 +463,9 @@ impl AssuanClient {
 
 impl Clone for AssuanClient {
     fn clone(&self) -> Self {
+        let stream = self.reader.get_ref().try_clone().unwrap();
         Self {
-            stream: self.stream.try_clone().unwrap(),
+            reader: BufReader::new(stream),
             #[cfg(windows)]
             nonce: self.nonce
         }
