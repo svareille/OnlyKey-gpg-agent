@@ -56,12 +56,10 @@ something in Rust.
 
 - Signing with an RSA key of 4096 bits may not work. See https://github.com/trustcrypto/libraries/issues/25 for more details.
 - ~~Derived keys are not supported yet.~~ Derivated keys are now supported!
-- Following links in socket file on Unix is not yet supported.
-- On some Linux (Debian and derivatives) the gpg-agent is started by systemd (`/usr/lib/systemd/user/gpg-agent.service`).
-  There is currently no support for this configuration. See [Troubleshooting/systemd](#systemd).
-- `gpg-agent` supervised mode is not supported. Although it's deprecated, the systemd's service of Debian still uses it.
 
 ## Install
+
+### Windows and standard systems
 
 First, get the path of the `gpg.conf` file:
 ```shell
@@ -76,6 +74,25 @@ If gpg-agent is already running either restart the computer, kill the process or
 ```shell
 $ gpg-connect-agent KILLAGENT /bye
 ```
+
+### Debian with systemd
+
+On some Linux (Debian and derivatives) the gpg-agent is automatically started by systemd.
+The service file is `gpg-agent.service`, located in `/usr/lib/systemd/user/`.
+
+To use `ok-gpg-agent` with systemd, copy the binary in `/usr/bin/`
+```shell
+sudo cp ok-gpg-agent /usr/bin/
+```
+then make a backup of `/usr/lib/systemd/user/gpg-agent.service` and replace the line `ExecStart=/usr/bin/gpg-agent --supervised -v`
+by `ExecStart=/usr/bin/ok-gpg-agent` in the original service file.
+
+```shell
+sudo cp /usr/lib/systemd/user/gpg-agent.service /usr/lib/systemd/user/gpg-agent.service.bak
+sudo nano /usr/lib/systemd/user/gpg-agent.service
+```
+
+Restart the service (`sudo systemctl restart gpg-agent`) or kill the agent (`gpg-connect-agent KILLAGENT /bye`).
 
 ## Configure
 
@@ -243,27 +260,6 @@ Check if `ok-gpg-agent` starts when called directly on the command line.
 
 If the error "Address already in use" is displayed and you are on Linux, remove the Unix
 socket file (its path is shown a few lines above).
-
-#### systemd
-
-On some Linux (Debian and derivatives) the gpg-agent is started by systemd
-(`/usr/lib/systemd/user/gpg-agent.service`). There is currently no support for this
-configuration. One way to circumvent this would be to save the original gpg-agent and replace it by
-`ok-gpg-agent`:
-
-```shell
-# cp /usr/bin/gpg-agent /usr/bin/gpg-agent-orig
-# cp ok-gpg-agent /usr/bin/gpg-agent
-```
-
-Then tell `ok-gpg-agent` to use the right gpg-agent:
-
-In `ok-agent.toml`, add the line:
-```toml
-agent_program = "/usr/bin/gpg-agent-orig"
-```
-
-However systemd launches gpg-agent with the `--supervised` option, which is not yet supported.
 
 ### OnlyKey not recognized
 
