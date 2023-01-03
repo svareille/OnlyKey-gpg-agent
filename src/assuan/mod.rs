@@ -275,7 +275,6 @@ impl AssuanClient {
             self.reader.read_until(b'\n', &mut buf)?;
         }
         if buf.is_empty() {
-            error!("Got EOF from client");
             return Err(ClientError::Eof);
         }
 

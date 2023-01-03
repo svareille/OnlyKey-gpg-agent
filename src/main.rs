@@ -15,7 +15,7 @@ use ok_gpg_agent::{utils, config::Settings};
 #[macro_use]
 extern crate lazy_static;
 
-use crate::{assuan::{AssuanListener, AssuanCommand, AssuanClient, AssuanServer, AssuanResponse}, agent::{handle_client, MyAgent, ServerResponseFilter}};
+use crate::{assuan::{AssuanListener, AssuanCommand, AssuanClient, AssuanServer, AssuanResponse, ClientError}, agent::{handle_client, MyAgent, ServerResponseFilter}};
 
 mod assuan;
 mod agent;
@@ -205,7 +205,11 @@ fn main() -> Result<()> {
             },
             Ok(false) => {},
             Err(e) => {
-                warn!("Client handling stopped: {}", e);
+                if let Some(ClientError::Eof) =  e.downcast_ref::<ClientError>() {
+                    info!("Client disconnected");
+                } else {
+                    warn!("Client handling stopped: {}", e);
+                }
             },
         }
         // Disconnect OnlyKey
