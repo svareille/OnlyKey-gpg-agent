@@ -76,7 +76,8 @@ pub fn handle_client(mut client: AssuanClient, mut server: AssuanServer, my_agen
                             } else if key_info_cmd.ssh_list {
                                 // Do nothing for now
                             } else if my_agent.lock().unwrap().get_known_keygrips().contains(&key_info_cmd.keygrip) {
-                                let response = format!("{} T - - - C - - A", key_info_cmd.keygrip);
+                                // Idea: get the slot label from OnlyKey as the IDSTR parameter
+                                let response = format!("{} T ONLYKEY - - C - - -", key_info_cmd.keygrip);
                                 debug!("Sending '{}' to client", response);
                                 if key_info_cmd.data {
                                     client.send(AssuanResponse::Data(response.into_bytes()))?;
@@ -394,7 +395,7 @@ impl MyAgent {
     pub fn check_ready(&mut self) -> bool {
         debug!("Checking if agent is ready to handle things");
 
-        // If the previously registerd OnlyKey has been disconnected, we will try to reconnect
+        // If the previously registered OnlyKey has been disconnected, we will try to reconnect
         if let Some(ok) = &self.onlykey {
             if !ok.lock().unwrap().connected {
                 self.onlykey = None;
