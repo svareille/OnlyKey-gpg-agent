@@ -1,8 +1,7 @@
 use std::{net::Shutdown, path::{PathBuf, Path}, io::{Write, BufWriter, BufReader, BufRead}};
-use std::{process::{Command, Child, Stdio, ChildStdout, ChildStdin}, sync::{Arc, Mutex}, fs, os::unix::prelude::FileTypeExt};
+use std::{process::{Command, Child, Stdio, ChildStdout, ChildStdin}, sync::{Arc, Mutex}};
 
 use log::{info, trace, error, debug};
-use regex::Regex;
 use thiserror::Error;
 
 mod stream;
@@ -18,7 +17,11 @@ use rand::{thread_rng, Fill};
 use std::fs::File;
 
 #[cfg(unix)]
-use std::os::unix::net::{UnixListener};
+use std::os::unix::{net::{UnixListener}, prelude::FileTypeExt};
+#[cfg(unix)]
+use std::fs;
+#[cfg(unix)]
+use regex::Regex;
 
 const LINE_LENGHT: usize = 1000;
 
@@ -62,7 +65,7 @@ pub struct AssuanListener {
 
 #[cfg(windows)]
 impl AssuanListener {
-    pub fn new(homedir: Option<&Path>, _delete_socket: bool) -> Result<Self, std::io::Error> {
+    pub fn new(homedir: &Path, _delete_socket: bool) -> Result<Self, std::io::Error> {
         let listener = TcpListener::bind(("127.0.0.1", 0))?;
         info!("Listening on port {}", listener.local_addr()?.port());
 
@@ -83,7 +86,7 @@ impl AssuanListener {
     pub fn accept(&self) -> Result<AssuanClient, std::io::Error> {
         let (socket, addr) = self.tcp_listener.accept()?;
         info!("Connection with {}", addr);
-        Ok(AssuanClient {reader: BufReader::new(stream), nonce: self.nonce })
+        Ok(AssuanClient {reader: BufReader::new(Stream { stream: socket }), nonce: self.nonce })
     }
 }
 
@@ -246,8 +249,10 @@ impl AssuanClient {
     /// [`ClientError::IOError`] if the underlying operation failed.
     #[cfg(windows)]
     fn validate(&mut self) -> Result<(), ClientError> {
+        use std::io::Read;
+
         let mut nonce: [u8; 16] = [0; 16];
-        self.stream.read_exact(&mut nonce)?;
+        self.reader.get_mut().read_exact(&mut nonce)?;
         if nonce != self.nonce {
             return Err(ClientError::WrongNonce);
         }
