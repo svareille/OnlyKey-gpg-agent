@@ -62,11 +62,11 @@ pub struct AssuanListener {
 
 #[cfg(windows)]
 impl AssuanListener {
-    pub fn new(_delete_socket: bool) -> Result<Self, std::io::Error> {
+    pub fn new(homedir: Option<&Path>, _delete_socket: bool) -> Result<Self, std::io::Error> {
         let listener = TcpListener::bind(("127.0.0.1", 0))?;
         info!("Listening on port {}", listener.local_addr()?.port());
 
-        let agent_socket = get_socket_file_path()?;
+        let agent_socket = get_socket_file_path(homedir)?;
         info!("Socket file is {:?}", agent_socket);
 
         let mut nonce = [0u8; 16];
@@ -95,11 +95,9 @@ pub struct AssuanListener {
 
 #[cfg(unix)]
 impl AssuanListener {
-    pub fn new(delete_socket: bool) -> Result<Self, std::io::Error> {
-        let mut agent_socket = get_socket_file_path()?;
+    pub fn new(homedir: &Path, delete_socket: bool) -> Result<Self, std::io::Error> {
+        let mut agent_socket = get_socket_file_path(homedir)?;
         info!("Socket file is {:?}", agent_socket);
-
-        
 
         if let Ok(meta_socket) = fs::metadata(&agent_socket) {
             // Follow link in socket if any
@@ -481,18 +479,16 @@ impl AssuanServer {
     /// 
     /// # Panic
     /// Panics if the homedir gotten from `gpgconf` cannot be used by the OS.
-    pub fn new(homedir: Option<&Path>, use_std_socket: bool, agent_path: Option<&Path>) -> Result<Self, ServerError> {
+    pub fn new(homedir: &Path, use_std_socket: bool, agent_path: Option<&Path>) -> Result<Self, ServerError> {
         // Start gpg-agent as a server.
         // Communication will be done via standard input/output.
         let orig_agent = match agent_path {
             Some(path) => path.to_owned(),
-            None => get_original_agent()?,
+            None => get_original_agent(homedir)?,
         };
 
         let mut command = Command::new(orig_agent);
-        if let Some(homedir) = homedir {
-            command.args(["--homedir", homedir.as_os_str().to_str().expect("Cannot convert homedir path to os path")]);
-        }
+        command.args(["--homedir", homedir.as_os_str().to_str().expect("Cannot convert homedir path to os path")]);
         if use_std_socket {
             command.arg("--use-standard-socket");
         }
@@ -762,8 +758,9 @@ pub fn decode_percent(data: &[u8]) -> Vec<u8> {
 /// 
 /// # Panic
 /// Panic if the path is not UTF8-encoded.
-fn get_socket_file_path() -> Result<PathBuf, std::io::Error> {
+fn get_socket_file_path(homedir: &Path) -> Result<PathBuf, std::io::Error> {
     let output = Command::new("gpgconf")
+        .args(["--homedir", homedir.as_os_str().to_str().expect("Cannot convert homedir path to os path")])
         .args(["--list-dirs", "agent-socket"])
         .output()?;
     let path = PathBuf::from(String::from_utf8(output.stdout).expect("Socket path is not UTF8").trim());
@@ -777,12 +774,13 @@ fn get_socket_file_path() -> Result<PathBuf, std::io::Error> {
 /// 
 /// # Panic
 /// Panic if the path is not UTF8-encoded.
-fn get_original_agent() -> Result<PathBuf, std::io::Error> {
+fn get_original_agent(homedir: &Path) -> Result<PathBuf, std::io::Error> {
     let mut gpgconf = PathBuf::from("gpgconf");
     if cfg!(target_os = "windows") {
         gpgconf.set_extension("exe");
     }
     let output = Command::new(&gpgconf)
+        .args(["--homedir", homedir.as_os_str().to_str().expect("Cannot convert homedir path to os path")])
         .args(["--list-dirs", "bindir"])
         .output()?;
 

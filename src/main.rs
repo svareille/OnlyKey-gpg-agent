@@ -36,12 +36,14 @@ fn main() -> Result<()> {
         daemonize()?;
     }
 
-    info!("Working with homedir {:?}", args.homedir.as_deref());
-
-    let mut config_file = match args.homedir.as_deref() {
+    let homedir = match args.homedir.as_deref() {
         Some(home) => home.to_owned(),
         None => utils::get_homedir().unwrap_or_default(),
     };
+
+    info!("Working with homedir {:?}", homedir.display());
+
+    let mut config_file = homedir.clone();
 
     config_file.push("ok-agent.toml");
 
@@ -59,7 +61,7 @@ fn main() -> Result<()> {
     
     let agent_path = if my_agent.settings.agent_program.as_os_str().is_empty() {None} else {Some(my_agent.settings.agent_program.as_path())};
 
-    let mut server = AssuanServer::new(args.homedir.as_deref(), args.use_standard_socket, agent_path)
+    let mut server = AssuanServer::new(homedir.as_path(), args.use_standard_socket, agent_path)
         .map_err(|e| {
             error!("Could not create assuan server: {:?}", e);
             e
@@ -167,7 +169,7 @@ fn main() -> Result<()> {
     }
 
     info!("Setup listener...");
-    let assuan_listener = AssuanListener::new(my_agent.lock().unwrap().settings.delete_socket).map_err(|e| {
+    let assuan_listener = AssuanListener::new(homedir.as_path(), my_agent.lock().unwrap().settings.delete_socket).map_err(|e| {
         error!("Couldn't setup the assuan listener: {:?}", e);
         e
     })?;
