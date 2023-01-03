@@ -359,12 +359,8 @@ pub struct MyAgent {
 }
 
 impl MyAgent {
-    pub fn new(config_file: PathBuf, settings: Settings, srf: Arc<Mutex<Vec<ServerResponseFilter>>>) -> Result<Self, AgentError> {
-        let mut agent = MyAgent { onlykey: None, server: None, config_file, settings, key: None, srf, data_to_sign: None};
-
-        agent.try_connect_device()?;
-
-        Ok(agent)
+    pub fn new(config_file: PathBuf, settings: Settings, srf: Arc<Mutex<Vec<ServerResponseFilter>>>) -> Self {
+        MyAgent { onlykey: None, server: None, config_file, settings, key: None, srf, data_to_sign: None}
     }
 
     pub fn reset(&mut self) {
@@ -377,9 +373,21 @@ impl MyAgent {
     /// 
     /// # Error
     /// Return [`AgentError::OnlyKeyConnectionFailed`] if the connection to a device failed.
-    fn try_connect_device(&mut self) -> Result<(), AgentError> {
+    pub fn try_connect_device(&mut self) -> Result<(), AgentError> {
         self.onlykey = OnlyKey::try_connection().map_err(AgentError::OnlyKeyConnectionFailed)?;
         Ok(())
+    }
+
+    /// Logically disconnect the connected OnlyKey if relevent.
+    /// 
+    /// After a call to this function, any program should be able to claim a handle on the connected
+    /// OnlyKey.
+    pub fn disconnect_device(&mut self) {
+        if let Some(ok) = self.onlykey.clone() {
+            ok.lock().unwrap().disconnect();
+            drop(ok);
+            self.onlykey = None;
+        }
     }
 
     /// Check if the agent is ready to handle operations requiering the OnlyKey

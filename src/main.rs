@@ -55,10 +55,7 @@ fn main() -> Result<()> {
 
     let srf: Arc<Mutex<Vec<ServerResponseFilter>>> = Arc::new(Mutex::new(Vec::new()));
     let srf_1 = srf.clone();
-    let mut my_agent = MyAgent::new(config_file, settings, srf_1).map_err(|e| {
-        error!("Could not create MyAgent: {:?}", e);
-        e
-    })?;
+    let mut my_agent = MyAgent::new(config_file, settings, srf_1);
     
     let agent_path = if my_agent.settings.agent_program.as_os_str().is_empty() {None} else {Some(my_agent.settings.agent_program.as_path())};
 
@@ -194,8 +191,15 @@ fn main() -> Result<()> {
         // Reset log level
         set_log_level(my_agent.lock().unwrap().settings.log_level);
 
-        let my_agent = Arc::clone(&my_agent);
-        match handle_client(client, server.clone(), my_agent) {
+        // Connect to an OnlyKey, silently continue if an error occurs
+        if let Err(e) = my_agent.lock().unwrap().try_connect_device() {
+            error!("Could not connect to an OnlyKey: {:?}", e);
+            // TODO: Send an error to client and shutdown connection
+            //client.send_err(code, desc)
+        }
+
+        let agent = Arc::clone(&my_agent);
+        match handle_client(client, server.clone(), agent) {
             Ok(true) => {
                 break;
             },
@@ -204,6 +208,9 @@ fn main() -> Result<()> {
                 warn!("Client handling stopped: {}", e);
             },
         }
+        // Disconnect OnlyKey
+        my_agent.lock().unwrap().disconnect_device();
+
         *(shared_client.lock().unwrap()) = None;
         debug!("Waiting for client connection");
     }

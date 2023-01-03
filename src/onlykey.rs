@@ -96,6 +96,10 @@ impl OnlyKey {
         }
         Ok(None)
     }
+
+    /// Try to connect to an OnlyKey.
+    /// 
+    /// If the connection is successful, open a thread monitoring the key.
     pub fn try_connection() -> Result<Option<Arc<Mutex<Self>>>, OnlyKeyError> {
         let onlykey = OnlyKey::hid_connect()?;
 
@@ -104,9 +108,9 @@ impl OnlyKey {
         if let Some(ok) = &onlykey {
             let ok = ok.clone();
             std::thread::spawn(move || {
-                loop {
+                while ok.lock().unwrap().connected {
                     if !ok.lock().unwrap().unlocked {
-                        // OnlyKey locked, it sends "INITIALIZED" every 500ms unitl unlocked
+                        // OnlyKey locked, it sends "INITIALIZED" every 500ms until unlocked
                         let mut ok = ok.lock().unwrap();
                         match ok.read_timeout(Some(Duration::ZERO)) {
                             Ok(data) => {
@@ -161,6 +165,11 @@ impl OnlyKey {
         let mut ok = OnlyKey {device, unlocked: false, connected, version: String::new()};
         ok.set_time()?;
         Ok(ok)
+    }
+
+    /// Disconnect the device, consequently shutting down the related thread.
+    pub fn disconnect(&mut self) {
+        self.connected = false;
     }
 
     pub fn set_time(&mut self) -> Result<(), OnlyKeyError> {
