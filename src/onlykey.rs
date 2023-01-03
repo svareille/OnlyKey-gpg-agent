@@ -124,6 +124,7 @@ impl OnlyKey {
                                     std::thread::sleep(Duration::from_millis(500));
                                 } else {
                                     info!("Onlykey unlocked");
+                                    std::thread::sleep(Duration::from_millis(1));
                                 }
                             },
                             Err(e) => {
@@ -150,6 +151,7 @@ impl OnlyKey {
                             std::thread::sleep(Duration::from_secs(1));
                         } else {
                             info!("Onlykey locked");
+                            std::thread::sleep(Duration::from_millis(1));
                         }
                     }
                 }
