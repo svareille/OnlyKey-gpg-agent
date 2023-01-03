@@ -1,4 +1,4 @@
-use std::{net::Shutdown, path::{PathBuf, Path}, io::{Write, BufWriter, BufReader, BufRead}};
+use std::{net::Shutdown, path::{PathBuf, Path}, io::{Write, BufWriter, BufReader, BufRead, ErrorKind}};
 use std::{process::{Command, Child, Stdio, ChildStdout, ChildStdin}, sync::{Arc, Mutex}};
 
 use log::{info, trace, error, debug};
@@ -275,7 +275,12 @@ impl AssuanClient {
         let mut buf = Vec::new();
         trace!("Client reading");
         {
-            self.reader.read_until(b'\n', &mut buf)?;
+            if let Err(e) = self.reader.read_until(b'\n', &mut buf) {
+                match e.kind() {
+                    ErrorKind::ConnectionReset => return Err(ClientError::Eof),
+                    _ => return Err(ClientError::IOError(e)),
+                }
+            }
         }
         if buf.is_empty() {
             return Err(ClientError::Eof);
