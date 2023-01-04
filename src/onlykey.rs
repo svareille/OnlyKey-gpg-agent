@@ -521,15 +521,15 @@ impl OnlyKey {
             "INITIALIZED" => Err(OnlyKeyError::Locked),
             "Error incorrect challenge was entered" => Err(OnlyKeyError::WrongChallenge),
             "Error no key set in this slot" => Err(OnlyKeyError::NoKeySet(match key {
-                KeyInfo::StoredKey(key) => format!("{:?}", key.slot),
+                KeyInfo::StoredKey(key) => key.slot.to_string(),
                 KeyInfo::DerivedKey(_) => "Derived key".to_string(),
             })),
             "Error key not set as signature key" => Err(OnlyKeyError::NotASignatureKey(match key {
-                KeyInfo::StoredKey(key) => format!("{:?}", key.slot),
+                KeyInfo::StoredKey(key) => key.slot.to_string(),
                 KeyInfo::DerivedKey(_) => "Derived key".to_string(),
             })),
             "Error key not set as decryption key" => Err(OnlyKeyError::NotADecryptionKey(match key {
-                KeyInfo::StoredKey(key) => format!("{:?}", key.slot),
+                KeyInfo::StoredKey(key) => key.slot.to_string(),
                 KeyInfo::DerivedKey(_) => "Derived key".to_string(),
             })),
             "Error with RSA data to sign invalid size" => Err(OnlyKeyError::InvalidDataSize),
@@ -547,12 +547,12 @@ impl OnlyKey {
             "No PIN set, You must set a PIN first" => Err(OnlyKeyError::NotInitialized),
             "Error invalid ECC slot" => Err(OnlyKeyError::WrongEccSlot),
             "Error no ECC Private Key set in this slot" => Err(OnlyKeyError::NoKeySet(match key {
-                KeyInfo::StoredKey(key) => format!("{:?}", key.slot),
+                KeyInfo::StoredKey(key) => key.slot.to_string(),
                 KeyInfo::DerivedKey(_) => "Derived key".to_string(),
             })),
             "Error invalid RSA slot" => Err(OnlyKeyError::WrongRsaSlot),
             "Error no RSA Private Key set in this slot" => Err(OnlyKeyError::NoKeySet(match key {
-                KeyInfo::StoredKey(key) => format!("{:?}", key.slot),
+                KeyInfo::StoredKey(key) => key.slot.to_string(),
                 KeyInfo::DerivedKey(_) => "Derived key".to_string(),
             })),
             "Error invalid RSA type" => Err(OnlyKeyError::InvalidRsaType),

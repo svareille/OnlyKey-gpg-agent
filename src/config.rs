@@ -54,6 +54,7 @@ pub enum EccType {
 
 #[derive(Debug, Deserialize, Serialize)]
 #[derive(Copy, Clone, PartialEq)]
+#[derive(strum::AsRefStr, strum::Display, strum::EnumIter)]
 #[repr(u8)]
 pub enum KeySlot {
     RSA1 = 1, RSA2 = 2, RSA3 = 3, RSA4 = 4,
