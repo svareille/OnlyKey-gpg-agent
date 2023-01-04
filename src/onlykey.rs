@@ -5,7 +5,7 @@ use log::{trace, debug, info, warn, error};
 use sha2::{Sha256, Digest};
 use thiserror::Error;
 
-use crate::config::{KeyInfo, KeyInfoError, KeyType, EccType};
+use crate::config::{KeyInfo, KeyType, EccType, KeySlot};
 
 #[cfg(windows)]
 const MESSAGE_HEADER : [u8; 5] = [0u8, 255, 255, 255, 255];
@@ -289,9 +289,7 @@ impl OnlyKey {
         let mut data: Vec<u8>;
         match key {
             KeyInfo::StoredKey(key) => {
-                let slot = key.slot_nb().map_err(|e|match e {
-                    KeyInfoError::UnkwnownSlotName(slot) => OnlyKeyError::UnkwnownSlotName(slot)
-                })?;
+                let slot = key.slot_nb();
                 data = vec![slot, 0];
                 // TODO: place in data the exact key type or ask OnlyKey developer to patch the firmware
             },
@@ -315,7 +313,7 @@ impl OnlyKey {
             if part.len() == 64 && part[..63].windows(2).any(|elem| elem[0] != elem[1]) {
                 // Got good part
                 self.error_parser(&part, key)?;
-                match key.r#type().unwrap() {
+                match key.r#type() {
                     KeyType::Ecc(_) => {
                         // We got everything
                         result = part;
@@ -340,7 +338,7 @@ impl OnlyKey {
             return Err(OnlyKeyError::PublicKeyGenerationFailed("No data received".to_owned()));
         }
 
-        match key.r#type().expect("Key info changed unexpectedly") {
+        match key.r#type() {
             KeyType::Ecc(t) => {
                 if result[34..63].windows(2).all(|elem| elem[0] == elem[1]) {
                     // Key should be ed25519 or cv25519
@@ -367,9 +365,7 @@ impl OnlyKey {
     }
 
     pub fn sign(&self, data: &[u8], sign_key: &KeyInfo) -> Result<Vec<u8>, OnlyKeyError> {
-        let slot = sign_key.slot_nb().map_err(|e|match e {
-            KeyInfoError::UnkwnownSlotName(slot) => OnlyKeyError::UnkwnownSlotName(slot)
-        })?;
+        let slot = sign_key.slot_nb();
 
         let data = OnlyKey::data_to_send(data, sign_key);
 
@@ -386,7 +382,7 @@ impl OnlyKey {
             if part.len() == 64 && part[..63].windows(2).any(|elem| elem[0] != elem[1]) {
                 // Got good part
                 self.error_parser(&part, sign_key)?;
-                match sign_key.r#type().unwrap() {
+                match sign_key.r#type() {
                     KeyType::Ecc(_) => {
                         // We got everything
                         result = part;
@@ -408,7 +404,7 @@ impl OnlyKey {
             debug!("Timeout reading signature");
         }
 
-        match sign_key.r#type().expect("Key info changed unexpectedly") {
+        match sign_key.r#type() {
             KeyType::Ecc(_) => {
                 if result.len() >= 60 {
                     //debug!("Got signature {} of length {}", hex::encode(result.clone()), result.len());
@@ -428,9 +424,7 @@ impl OnlyKey {
     }
 
     pub fn decrypt(&self, ciphertext: &[u8], key: &KeyInfo) -> Result<Vec<u8>, OnlyKeyError> {
-        let slot = key.slot_nb().map_err(|e|match e {
-            KeyInfoError::UnkwnownSlotName(slot) => OnlyKeyError::UnkwnownSlotName(slot)
-        })?;
+        let slot = key.slot_nb();
 
         let data = OnlyKey::data_to_send(ciphertext, key);
 
@@ -447,7 +441,7 @@ impl OnlyKey {
             if part.len() == 64 && part[..63].windows(2).any(|elem| elem[0] != elem[1]) {
                 // Got good part
                 self.error_parser(&part, key)?;
-                match key.r#type().unwrap() {
+                match key.r#type() {
                     KeyType::Ecc(_) => {
                         // We got everything
                         result = part;
@@ -475,7 +469,7 @@ impl OnlyKey {
             debug!("Timeout reading decrypted data");
         }
 
-        if let KeyType::Ecc(_) = key.r#type().expect("Key info changed unexpectedly") {
+        if let KeyType::Ecc(_) = key.r#type() {
             if let Some(r) = result.get(34..63) {
                 // As per https://www.rfc-editor.org/rfc/rfc6637.html#section-6, an OpenPGP MPI
                 // begins with the byte 0x04
@@ -492,7 +486,7 @@ impl OnlyKey {
                 }
             }
             return Ok(result);
-        } else if let Ok(KeyType::Rsa(_)) = key.r#type() {
+        } else if let KeyType::Rsa(_) = key.r#type() {
             // We only got the plaintext key, we need to encode it in a PKCS#1 packet
             let mut padding = Vec::new();
             padding.resize(256 - result.len() - 3, 0xFF);
@@ -506,6 +500,11 @@ impl OnlyKey {
 
         error!("Decryption failed. Got {:?}", result);
         Err(OnlyKeyError::DecryptFailed)
+    }
+
+    /// Return the first empty ECC slot, or None if none available.
+    pub fn get_first_empty_ecc_slot(&self) -> Option<KeySlot> {
+        None
     }
 
     pub fn compute_challenge(data: &[u8]) -> (u8, u8, u8) {
@@ -522,15 +521,15 @@ impl OnlyKey {
             "INITIALIZED" => Err(OnlyKeyError::Locked),
             "Error incorrect challenge was entered" => Err(OnlyKeyError::WrongChallenge),
             "Error no key set in this slot" => Err(OnlyKeyError::NoKeySet(match key {
-                KeyInfo::StoredKey(key) => key.slot.clone(),
+                KeyInfo::StoredKey(key) => format!("{:?}", key.slot),
                 KeyInfo::DerivedKey(_) => "Derived key".to_string(),
             })),
             "Error key not set as signature key" => Err(OnlyKeyError::NotASignatureKey(match key {
-                KeyInfo::StoredKey(key) => key.slot.clone(),
+                KeyInfo::StoredKey(key) => format!("{:?}", key.slot),
                 KeyInfo::DerivedKey(_) => "Derived key".to_string(),
             })),
             "Error key not set as decryption key" => Err(OnlyKeyError::NotADecryptionKey(match key {
-                KeyInfo::StoredKey(key) => key.slot.clone(),
+                KeyInfo::StoredKey(key) => format!("{:?}", key.slot),
                 KeyInfo::DerivedKey(_) => "Derived key".to_string(),
             })),
             "Error with RSA data to sign invalid size" => Err(OnlyKeyError::InvalidDataSize),
@@ -548,12 +547,12 @@ impl OnlyKey {
             "No PIN set, You must set a PIN first" => Err(OnlyKeyError::NotInitialized),
             "Error invalid ECC slot" => Err(OnlyKeyError::WrongEccSlot),
             "Error no ECC Private Key set in this slot" => Err(OnlyKeyError::NoKeySet(match key {
-                KeyInfo::StoredKey(key) => key.slot.clone(),
+                KeyInfo::StoredKey(key) => format!("{:?}", key.slot),
                 KeyInfo::DerivedKey(_) => "Derived key".to_string(),
             })),
             "Error invalid RSA slot" => Err(OnlyKeyError::WrongRsaSlot),
             "Error no RSA Private Key set in this slot" => Err(OnlyKeyError::NoKeySet(match key {
-                KeyInfo::StoredKey(key) => key.slot.clone(),
+                KeyInfo::StoredKey(key) => format!("{:?}", key.slot),
                 KeyInfo::DerivedKey(_) => "Derived key".to_string(),
             })),
             "Error invalid RSA type" => Err(OnlyKeyError::InvalidRsaType),

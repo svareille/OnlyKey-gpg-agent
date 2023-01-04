@@ -1,7 +1,6 @@
-use std::{path::{Path, PathBuf}, collections::HashMap};
+use std::{path::{Path, PathBuf}};
 
 use anyhow::{Result};
-use thiserror::Error;
 use config::{ConfigError, Config, File};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
@@ -53,10 +52,16 @@ pub enum EccType {
     Secp256K1
 }
 
-#[derive(Error, Debug)]
-pub enum KeyInfoError {
-    #[error("Unkwnow slot name: {0}")]
-    UnkwnownSlotName(String),
+#[derive(Debug, Deserialize, Serialize)]
+#[derive(Copy, Clone, PartialEq)]
+#[repr(u8)]
+pub enum KeySlot {
+    RSA1 = 1, RSA2 = 2, RSA3 = 3, RSA4 = 4,
+
+    ECC1  = 101, ECC2  = 102, ECC3  = 103, ECC4  = 104,
+    ECC5  = 105, ECC6  = 106, ECC7  = 107, ECC8  = 108,
+    ECC9  = 109, ECC10 = 110, ECC11 = 111, ECC12 = 112,
+    ECC13 = 113, ECC14 = 114, ECC15 = 115, ECC16 = 116,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -68,14 +73,14 @@ pub enum KeyInfo {
 }
 
 impl KeyInfo {
-    pub fn slot_nb(&self) -> Result<u8, KeyInfoError> {
+    pub fn slot_nb(&self) -> u8 {
         match self {
             KeyInfo::StoredKey(keyinfo) => keyinfo.slot_nb(),
             KeyInfo::DerivedKey(keyinfo) => keyinfo.slot_nb(),
         }
     }
 
-    pub fn r#type(&self) -> Result<KeyType, KeyInfoError> {
+    pub fn r#type(&self) -> KeyType {
         match self {
             KeyInfo::StoredKey(keyinfo) => keyinfo.r#type(),
             KeyInfo::DerivedKey(keyinfo) => keyinfo.r#type(),
@@ -97,7 +102,7 @@ pub struct StoredKeyInfo {
     /// The slot of the OnlyKey on which the private part of this key is stored
     /// 
     /// Slot may be RSA1-RSA4 ECC1-ECC16
-    pub slot: String,
+    pub slot: KeySlot,
     /// The keygrip of this key
     pub keygrip: String,
     /// The size of the public key in bits
@@ -107,24 +112,17 @@ pub struct StoredKeyInfo {
 }
 
 impl StoredKeyInfo {
-    pub fn slot_nb(&self) -> Result<u8, KeyInfoError> {
-        let mut map = HashMap::new();
-        for i in 1..=4 {
-            map.insert(format!("RSA{}", i), i);
-        }
-        for i in 1..=16 {
-            map.insert(format!("ECC{}", i), i+100);
-        }
-        map.get(&self.slot).copied().ok_or_else(|| KeyInfoError::UnkwnownSlotName(self.slot.clone()))
+    pub fn slot_nb(&self) -> u8 {
+        self.slot as u8
     }
 
-    pub fn r#type(&self) -> Result<KeyType, KeyInfoError> {
-        if self.slot.starts_with("RSA") {
-            Ok(KeyType::Rsa(self.size))
-        } else if self.slot.starts_with("ECC") {
-            Ok(KeyType::Ecc(EccType::Unkwnow))
-        } else {
-            Err(KeyInfoError::UnkwnownSlotName(self.slot.clone()))
+    pub fn r#type(&self) -> KeyType {
+        match self.slot {
+            KeySlot::RSA1 | KeySlot::RSA2 | KeySlot::RSA3 | KeySlot::RSA4 => KeyType::Rsa(self.size),
+            KeySlot::ECC1  | KeySlot::ECC2  | KeySlot::ECC3  | KeySlot::ECC4  |
+            KeySlot::ECC5  | KeySlot::ECC6  | KeySlot::ECC7  | KeySlot::ECC8  |
+            KeySlot::ECC9  | KeySlot::ECC10 | KeySlot::ECC11 | KeySlot::ECC12 |
+            KeySlot::ECC13 | KeySlot::ECC14 | KeySlot::ECC15 | KeySlot::ECC16 => KeyType::Ecc(EccType::Unkwnow),
         }
     }
 }
@@ -141,18 +139,18 @@ pub struct DerivedKeyInfo {
 }
 
 impl DerivedKeyInfo {
-    pub fn slot_nb(&self) -> Result<u8, KeyInfoError> {
-        Ok(match self.ecc_type {
+    pub fn slot_nb(&self) -> u8 {
+        match self.ecc_type {
             EccType::Unkwnow => 132,
             EccType::Ed25519 => 201,
             EccType::Nist256P1 => 202,
             EccType::Secp256K1 => 203,
             EccType::Cv25519 => 204,
-        })
+        }
     }
 
-    pub fn r#type(&self) -> Result<KeyType, KeyInfoError> {
-        Ok(KeyType::Ecc(self.ecc_type.clone()))
+    pub fn r#type(&self) -> KeyType {
+        KeyType::Ecc(self.ecc_type.clone())
     }
 
     pub fn algo_nb(&self) -> u8 {

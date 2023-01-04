@@ -469,27 +469,23 @@ impl MyAgent {
 
                     let signature = ok.lock().unwrap().sign(&data.data, &sign_key)?;
                     match sign_key.r#type() {
-                        Ok(KeyType::Ecc(_)) => {
+                        KeyType::Ecc(_) => {
                             if signature.len() != 64 {
                                 error!("Signature length is {}, expected 64", signature.len());
                                 return Err(AgentError::InvalidSignatureLength(signature.len()));
                             }
                         },
-                        Ok(KeyType::Rsa(size)) => {
+                        KeyType::Rsa(size) => {
                             if signature.len() != size/8 {
                                 error!("Signature length is {}, expected {}", signature.len(), size/8);
                                 debug!("Signature: {:?}", signature);
                                 return Err(AgentError::InvalidSignatureLength(signature.len()));
                             }
                         }
-                        Err(e) => {
-                            error!("Error while getting the type of the key: {:?}", e);
-                            return Err(AgentError::Other);
-                        }
                     }
 
                     let sexp = match sign_key.r#type() {
-                        Ok(KeyType::Ecc(_)) => {
+                        KeyType::Ecc(_) => {
                             Sexp::List(vec![
                                 Sexp::Atom(b"sig-val".to_vec()),
                                 Sexp::List(vec![
@@ -505,7 +501,7 @@ impl MyAgent {
                                 ]),
                             ])
                         },
-                        Ok(KeyType::Rsa(_)) => {
+                        KeyType::Rsa(_) => {
                             Sexp::List(vec![
                                 Sexp::Atom(b"sig-val".to_vec()),
                                 Sexp::List(vec![
@@ -517,10 +513,6 @@ impl MyAgent {
                                 ]),
                             ])
                         },
-                        Err(e) => {
-                            error!("Error while getting the type of the key: {:?}", e);
-                            return Err(AgentError::Other);
-                        }
                     };
 
                     debug!("Signature S-Exp: {:?}", sexp);
@@ -542,16 +534,12 @@ impl MyAgent {
             if let Some(ok) = self.onlykey.clone() {
                 debug!("Data to decrypt: {:?}", data);
                 let ciphertext = match key.r#type() {
-                    Ok(KeyType::Ecc(_)) => {
+                    KeyType::Ecc(_) => {
                         parse_ecdh(&data).map_err(|_| AgentError::Other)?
                     },
-                    Ok(KeyType::Rsa(_)) => {
+                    KeyType::Rsa(_) => {
                         parse_rsa(&data).map_err(|_| AgentError::Other)?
                     },
-                    Err(e) => {
-                        error!("Error while getting the type of the key: {:?}", e);
-                        return Err(AgentError::Other);
-                    }
                 };
                 self.display_challenge(&ciphertext)?;
 
