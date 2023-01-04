@@ -3,9 +3,10 @@ use std::{sync::{Mutex, Arc}, time::{Duration, SystemTime, Instant}, fmt::Debug}
 use hidapi::{HidDevice, HidApi};
 use log::{trace, debug, info, warn, error};
 use sha2::{Sha256, Digest};
+use strum::IntoEnumIterator;
 use thiserror::Error;
 
-use crate::config::{KeyInfo, KeyType, EccType, KeySlot};
+use crate::config::{KeyInfo, KeyType, EccType, KeySlot, StoredKeyInfo};
 
 #[cfg(windows)]
 const MESSAGE_HEADER : [u8; 5] = [0u8, 255, 255, 255, 255];
@@ -503,8 +504,22 @@ impl OnlyKey {
     }
 
     /// Return the first empty ECC slot, or None if none available.
-    pub fn get_first_empty_ecc_slot(&self) -> Option<KeySlot> {
-        None
+    pub fn get_first_empty_ecc_slot(&self) -> Result<Option<KeySlot>, OnlyKeyError> {
+        for slot in KeySlot::iter() {
+            if slot == KeySlot::RSA1 || slot == KeySlot::RSA2 || slot == KeySlot::RSA3 || slot == KeySlot::RSA4 {
+                continue;
+            }
+            match self.pubkey(&KeyInfo::StoredKey(StoredKeyInfo {
+                slot,
+                keygrip: String::new(),
+                size: 0,
+            })) {
+                Err(OnlyKeyError::NoKeySet(_)) => return Ok(Some(slot)),
+                Err(e) => return Err(e),
+                Ok(_) => trace!("Slot {} occupied", slot),
+            }
+        }
+        Ok(None)
     }
 
     pub fn compute_challenge(data: &[u8]) -> (u8, u8, u8) {
