@@ -307,6 +307,7 @@ impl OnlyKey {
         self.send(OKGETPUBKEY, &data)?;
 
         let start = Instant::now();
+        let mut got_last_packet = None;
         let mut result = Vec::new();
 
         while start.elapsed() < wait_for {
@@ -314,6 +315,7 @@ impl OnlyKey {
             if part.len() == 64 && part[..63].windows(2).any(|elem| elem[0] != elem[1]) {
                 // Got good part
                 self.error_parser(&part, key)?;
+                got_last_packet = Some(Instant::now());
                 match key.r#type() {
                     KeyType::Ecc(_) => {
                         // We got everything
@@ -321,13 +323,20 @@ impl OnlyKey {
                         break;
                     },
                     KeyType::Rsa(size) => {
-                        // We got a part of the signature
+                        // We got a part of the public key
                         result.extend(part);
 
-                        if result.len() >= size/8 {
+                        if size != 0 && result.len() >= size/8 {
                             break;
                         }
                     }
+                }
+            }
+            if let KeyType::Rsa(0) = key.r#type() {
+                // We don't actually know the size, so we guess
+                if got_last_packet.is_some() && got_last_packet.unwrap().elapsed() >= Duration::from_millis(100) {
+                    // It seems we got everything
+                    break;
                 }
             }
         }
@@ -357,7 +366,7 @@ impl OnlyKey {
                 }
             },
             KeyType::Rsa(size) => {
-                if result.len() > size/8 {
+                if size != 0 && result.len() > size/8 {
                     result.resize(size/8, 0);
                 }
                 Ok(result)
@@ -503,23 +512,25 @@ impl OnlyKey {
         Err(OnlyKeyError::DecryptFailed)
     }
 
-    /// Return the first empty ECC slot, or None if none available.
-    pub fn get_first_empty_ecc_slot(&self) -> Result<Option<KeySlot>, OnlyKeyError> {
+    /// Return a list of empty key slots.
+    pub fn get_empty_key_slots(&self) -> Result<Vec<KeySlot>, OnlyKeyError> {
+        let mut empty_slots = Vec::new();
         for slot in KeySlot::iter() {
-            if slot == KeySlot::RSA1 || slot == KeySlot::RSA2 || slot == KeySlot::RSA3 || slot == KeySlot::RSA4 {
-                continue;
-            }
+            debug!("Testing slot {}", slot);
             match self.pubkey(&KeyInfo::StoredKey(StoredKeyInfo {
                 slot,
                 keygrip: String::new(),
                 size: 0,
             })) {
-                Err(OnlyKeyError::NoKeySet(_)) => return Ok(Some(slot)),
+                Err(OnlyKeyError::NoKeySet(_)) => empty_slots.push(slot),
                 Err(e) => return Err(e),
-                Ok(_) => trace!("Slot {} occupied", slot),
+                Ok(pubkey) => {
+                    debug!("Pubkey for {} is {:?}", slot, pubkey);
+                    trace!("Slot {} occupied", slot);
+                },
             }
         }
-        Ok(None)
+        Ok(empty_slots)
     }
 
     pub fn compute_challenge(data: &[u8]) -> (u8, u8, u8) {
