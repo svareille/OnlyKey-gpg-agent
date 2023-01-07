@@ -28,6 +28,7 @@ num-derive = "*"
 num-traits = "*"
 rand = "*"
 regex = "*"
+sequoia-openpgp = { version = "1.13.0", default-features = false, features = ["crypto-rust", "allow-experimental-crypto", "allow-variable-time-crypto"]}
 serde = { version = "1.0", features = ["derive"] }
 sha1 = "*"
 sha2 = "*"
