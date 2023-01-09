@@ -2,6 +2,7 @@ use std::{path::PathBuf, io};
 
 use chrono::{DateTime, Local};
 use clap::Parser;
+use ok_gpg_agent::config::{KeySlot, KeyType};
 use ok_gpg_agent::onlykey::OnlyKey;
 use sequoia_openpgp::Cert;
 use sequoia_openpgp::cert::ValidCert;
@@ -95,6 +96,77 @@ fn main() {
                     selected_keys.clear();
                 }
             }
+        }
+    }
+
+    // The selection have been approved
+    // Begin interaction with OnlyKey
+
+    let onlykey = match OnlyKey::hid_connect().unwrap() {
+        Some(ok) => ok,
+        None =>  {
+            println!("No OnlyKey connected. Aborting.");
+            return;
+        },
+    };
+
+    println!("Asking the connected OnlyKey for empty slots...");
+
+    let mut empty_slots = onlykey.get_empty_key_slots().unwrap();
+
+    let mut keys_slots = Vec::new();
+
+    for &selected in &selected_keys {
+        let key_to_move = key.keys().nth(selected).unwrap();
+        match key_to_move.mpis() {
+            sequoia_openpgp::crypto::mpi::PublicKey::RSA { .. } => {
+                match key_to_move.mpis().bits().unwrap_or_default() {
+                    2048 | 4096 => {
+                        match empty_slots.iter().position(|slot| matches!(slot.r#type(), KeyType::Rsa(_)) ) {
+                            Some(index) => {
+                                let slot = empty_slots.swap_remove(index);
+                                keys_slots.push((key_to_move, slot));
+                            }
+                            None => {
+                                eprintln!("There is no empty slot for an RSA key. Aborting.");
+                                return;
+                            }
+                        }
+                    }
+                    n => {
+                        eprintln!("{n} bits RSA keys are not supported. Aborting.");
+                        return;
+                    }
+                }
+            },
+            sequoia_openpgp::crypto::mpi::PublicKey::DSA { .. } | sequoia_openpgp::crypto::mpi::PublicKey::ElGamal { .. } => {
+                eprintln!("Key type not supported: {}. Aborting.", key_info_str(&key_to_move, selected == 0));
+                return;
+            },
+            sequoia_openpgp::crypto::mpi::PublicKey::EdDSA { curve, q: _ } | sequoia_openpgp::crypto::mpi::PublicKey::ECDSA { curve, q: _ } | sequoia_openpgp::crypto::mpi::PublicKey::ECDH { curve, q: _, hash: _, sym: _ } => {
+                match curve {
+                    Curve::NistP256 | Curve::Ed25519 | Curve::Cv25519 => {
+                        match empty_slots.iter().position(|slot| matches!(slot.r#type(), KeyType::Ecc(_))) {
+                            Some(index) => {
+                                let slot = empty_slots.swap_remove(index);
+                                keys_slots.push((key_to_move, slot));
+                            }
+                            None => {
+                                eprintln!("There is no empty slot for an ECC key. Aborting.");
+                                return;
+                            }
+                        }
+                    },
+                    Curve::NistP384 | Curve::NistP521 | Curve::BrainpoolP256 | Curve::BrainpoolP512 | Curve::Unknown(_) => {
+                        eprintln!("Key type not supported: {}. Aborting.", key_info_str(&key_to_move, selected == 0));
+                        return;
+                    },
+                }
+            },
+            _ => {
+                eprintln!("Unknown key type: {}. Aborting.", key_info_str(&key_to_move, selected == 0));
+                return;
+            },
         }
     }
 }

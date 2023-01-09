@@ -65,6 +65,18 @@ pub enum KeySlot {
     ECC13 = 113, ECC14 = 114, ECC15 = 115, ECC16 = 116,
 }
 
+impl KeySlot {
+    pub fn r#type(&self) -> KeyType {
+        match self {
+            KeySlot::RSA1 | KeySlot::RSA2 | KeySlot::RSA3 | KeySlot::RSA4 => KeyType::Rsa(0),
+            KeySlot::ECC1  | KeySlot::ECC2  | KeySlot::ECC3  | KeySlot::ECC4  |
+            KeySlot::ECC5  | KeySlot::ECC6  | KeySlot::ECC7  | KeySlot::ECC8  |
+            KeySlot::ECC9  | KeySlot::ECC10 | KeySlot::ECC11 | KeySlot::ECC12 |
+            KeySlot::ECC13 | KeySlot::ECC14 | KeySlot::ECC15 | KeySlot::ECC16 => KeyType::Ecc(EccType::Unkwnow),
+        }
+    }
+}
+
 #[derive(Debug, Deserialize, Serialize)]
 #[derive(Clone)]
 #[serde(untagged)]
