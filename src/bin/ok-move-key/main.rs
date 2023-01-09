@@ -2,6 +2,7 @@ use std::{path::PathBuf, io};
 
 use chrono::{DateTime, Local};
 use clap::Parser;
+use ok_gpg_agent::onlykey::OnlyKey;
 use sequoia_openpgp::Cert;
 use sequoia_openpgp::cert::ValidCert;
 use sequoia_openpgp::cert::amalgamation::ValidAmalgamation;
@@ -12,6 +13,7 @@ use sequoia_openpgp::parse::Parse;
 use sequoia_openpgp::policy::StandardPolicy;
 use sequoia_openpgp::types::{Curve};
 
+use text_io::read;
 
 /// Copy an existing private PGP key to an OnlyKey
 #[derive(Parser, Debug)]
@@ -38,7 +40,63 @@ fn main() {
     let p = &StandardPolicy::new();
     let key = key.with_policy(p, None).expect("key is not valid");
 
+    println!();
     display_key(&key);
+    println!();
+
+    let mut selected_keys: Vec<usize> = Vec::new();
+
+    while selected_keys.is_empty() {
+        print!("Please select witch key(s) to copy on the OnlyKey: ");
+        let key_numbers: String = read_line!();
+        selected_keys = key_numbers.split_whitespace().filter_map(|s| s.parse().ok()).collect();
+        
+        // Check if the selected keys are valid
+        let mut good_selection = true;
+        for &selected in &selected_keys {
+            if let Some(k) = key.keys().nth(selected) {
+                if !has_secret(&k) {
+                    println!("Wrong selection: the key n°{selected} does not contain any secret. Please choose again.");
+                    good_selection = false;
+                    break;
+                }
+            } else {
+                println!("Wrong selection: there is no key n°{selected}. Please choose again.");
+                good_selection = false;
+                break;
+            }
+        }
+
+        if !good_selection {
+            selected_keys.clear()
+        } else {
+            // Perform a few verifications
+
+            selected_keys.retain(|&selected| {
+                if let Some(k) = key.keys().nth(selected) {
+                    if k.alive().is_err() {
+                        print!("The key n°{selected}: \"{}\" is expired. Do you really want to copy it (y/n)? ", key_info_str(&k, selected == 0));
+                        matches!(read!(), 'y')
+                    } else {
+                        true
+                    }
+                } else {
+                    false
+                }
+            });
+
+            if !good_selection {
+                selected_keys.clear();
+            } else {            
+                print!("You chose the key(s) {selected_keys:?}. Is this correct (y/n)? ");
+                if let 'y' = read!() {
+                    break;
+                } else {
+                    selected_keys.clear();
+                }
+            }
+        }
+    }
 }
 
 /// Display (println) the given key in a similar format as GPG does.
@@ -46,32 +104,52 @@ fn main() {
 /// Output similar to `gpg -K --with-subkey-fingerprints`.
 fn display_key(key: &ValidCert) {
     let primary = key.primary_key();
-    let sec_str = if primary.has_secret() {"sec "} else {"sec#"};
-    let creation_time: DateTime<Local> = primary.creation_time().into();
+
     // Primary key
-    println!("{sec}  {type} {creation_time} {usage} {expiration}",
-        sec=sec_str,
-        type=algo_str(&primary),
-        creation_time=creation_time.format("%Y-%m-%d"),
-        usage=usage_str(&primary),
-        expiration=expiration_str(&primary),
-    );
-    println!("      {fingerprint}", fingerprint = primary.fingerprint());
+    println!("0: {}", key_info_str(&primary, true));
+    println!("         {fingerprint}", fingerprint = primary.fingerprint());
     // User Ids
     for uid in key.userids() {
         println!("uid          {}", uid.userid())
     }
     // Sub keys
+    let mut i = 1;
     for subkey in key.keys().subkeys() {
-        let ssb = if subkey.has_secret() {"ssb "} else {"ssb#"};
-        let creation_time: DateTime<Local> = subkey.creation_time().into();
-        println!("{ssb}  {type} {creation_time} {usage} {expiration}",
-            type=algo_str(&subkey),
-            creation_time=creation_time.format("%Y-%m-%d"),
-            usage=usage_str(&subkey),
-            expiration=expiration_str(&subkey),
-        );
-        println!("      {fingerprint}", fingerprint = subkey.fingerprint());
+        println!("{i}: {}", key_info_str(&subkey, false));
+        println!("         {fingerprint}", fingerprint = subkey.fingerprint());
+        i += 1;
+    }
+}
+
+fn key_info_str<'a, P, R, R2>(key: &ValidKeyAmalgamation<'a, P, R, R2>, primary: bool) -> String
+where P: 'a + KeyParts,
+      R: 'a + KeyRole,
+      R2: Copy,
+      ValidKeyAmalgamation<'a, P, R, R2>: ValidAmalgamation<'a, Key<P, R>>,
+{
+    
+    let sec = if primary { if has_secret(key) {"sec "} else {"sec#"} }
+        else if has_secret(key) {"ssb "} else {"ssb#"};
+    let creation_time: DateTime<Local> = key.creation_time().into();
+    format!("{sec}  {type} {creation_time} {usage} {expiration}",
+        type=algo_str(key),
+        creation_time=creation_time.format("%Y-%m-%d"),
+        usage=usage_str(key),
+        expiration=expiration_str(key),
+    )
+}
+
+fn has_secret<'a, P, R, R2>(key: &ValidKeyAmalgamation<'a, P, R, R2>) -> bool
+where P: 'a + KeyParts,
+      R: 'a + KeyRole,
+      R2: Copy,
+{
+    match key.key().optional_secret() {
+        None => false,
+        Some(sequoia_openpgp::packet::key::SecretKeyMaterial::Encrypted(encrypted)) => {
+            !matches!(encrypted.s2k(), sequoia_openpgp::crypto::S2K::Private { tag: 101, parameters: _ }) // GnuPG extension for offline master key
+        },
+        _ => true,
     }
 }
 
@@ -143,4 +221,24 @@ where P: 'a + KeyParts,
             format!("[expire: {}]", time.format("%Y-%m-%d"))
         }
     }
+}
+
+#[cfg(windows)]
+#[macro_export]
+macro_rules! read_line {
+    (  ) => {
+        {
+            read!("{}\r\n")
+        }
+    };
+}
+
+#[cfg(unix)]
+#[macro_export]
+macro_rules! read_line {
+    ( $( $x:expr ),* ) => {
+        {
+            read!("{}\n")
+        }
+    };
 }
