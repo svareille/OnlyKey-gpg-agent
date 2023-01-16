@@ -3,7 +3,7 @@ use std::{path::PathBuf, io};
 use chrono::{DateTime, Local};
 use clap::Parser;
 use anyhow::{Result, anyhow};
-use ok_gpg_agent::config::{KeyType, KeySlot};
+use ok_gpg_agent::config::KeyType;
 use ok_gpg_agent::onlykey::{OnlyKey, KeyRole};
 use sequoia_openpgp::Cert;
 use sequoia_openpgp::cert::ValidCert;
@@ -123,8 +123,6 @@ Make sure your key is not yet in config mode or else the connection will fail.")
         let key_to_move = key.keys().nth(selected).unwrap();
         match key_to_move.mpis() {
             sequoia_openpgp::crypto::mpi::PublicKey::RSA { .. } => {
-                match key_to_move.mpis().bits().unwrap_or_default() {
-                    2048 | 4096 => {
                         match empty_slots.iter().position(|slot| matches!(slot.r#type(), KeyType::Rsa(_)) ) {
                             Some(index) => {
                         let slot = empty_slots.remove(index);
@@ -132,12 +130,6 @@ Make sure your key is not yet in config mode or else the connection will fail.")
                             }
                             None => {
                                 eprintln!("There is no empty slot for an RSA key. Aborting.");
-                                return;
-                            }
-                        }
-                    }
-                    n => {
-                        eprintln!("{n} bits RSA keys are not supported. Aborting.");
                         return;
                     }
                 }
