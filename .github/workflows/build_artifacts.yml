@@ -46,11 +46,13 @@ jobs:
         run: |
           mv target/release/ok-gpg-agent.exe bin/
           mv target/release/ok-gen-key.exe bin/
+          mv target/release/ok-move-key.exe bin/
       - name: Moving binaries [Other]
         if: matrix.os != 'windows-latest'
         run: |
           mv target/release/ok-gpg-agent bin/
           mv target/release/ok-gen-key bin/
+          mv target/release/ok-move-key bin/
       - name: Zip Windows binaries
         if: matrix.os == 'windows-latest'
         run: 7z a -tzip -sdel bin/ok-gpg-agent-${{ matrix.build_target }}.zip bin/*
