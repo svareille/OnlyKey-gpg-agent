@@ -4,7 +4,7 @@ use chrono::{DateTime, Local};
 use clap::Parser;
 use anyhow::{Result, anyhow};
 use ok_gpg_agent::config::KeyType;
-use ok_gpg_agent::onlykey::{OnlyKey, KeyRole};
+use ok_gpg_agent::onlykey::{OnlyKey, KeyRole, OnlyKeyError};
 use sequoia_openpgp::Cert;
 use sequoia_openpgp::cert::ValidCert;
 use sequoia_openpgp::cert::amalgamation::ValidAmalgamation;
@@ -35,12 +35,20 @@ fn main() {
     let args = Args::parse();
 
     if args.list_slots {
-        let onlykey = match OnlyKey::hid_connect().unwrap() {
-            Some(ok) => ok,
-            None =>  {
-                println!("No OnlyKey connected. Aborting.");
+        let onlykey = match OnlyKey::hid_connect() {
+            Ok(Some(ok)) => ok,
+            Ok(None) =>  {
+                eprintln!("No OnlyKey connected. Aborting.");
                 return;
             },
+            Err(OnlyKeyError::Locked) => {
+                eprintln!("The connected OnlyKey is locked. Aborting.");
+                return;
+            },
+            Err(e) => {
+                eprintln!("Could not connect to the OnlyKey: {:?}", e);
+                return;
+            }
         };
         let empty_slots = onlykey.get_empty_key_slots().expect("could not communicate with the OnlyKey");
 
@@ -59,7 +67,13 @@ fn main() {
     let key = if keyfile == PathBuf::from("-") {
         Cert::from_reader(io::stdin()).expect("couldn't read key from stdin")
     } else {
-        Cert::from_file(&keyfile).unwrap_or_else(|e| panic!("couldn't read key from file {}: {}", keyfile.display(), e))
+        match Cert::from_file(&keyfile) {
+            Ok(cert) => cert,
+            Err(e) => {
+                eprintln!("couldn't read key from file {}: {}", keyfile.display(), e);
+                return;
+            }
+        }
     };
 
     if !key.is_tsk() {
@@ -131,12 +145,20 @@ fn main() {
     // The selection have been approved
     // Begin interaction with OnlyKey
 
-    let onlykey = match OnlyKey::hid_connect().unwrap() {
-        Some(ok) => ok,
-        None =>  {
-            println!("No OnlyKey connected. Aborting.");
+    let onlykey = match OnlyKey::hid_connect() {
+        Ok(Some(ok)) => ok,
+        Ok(None) =>  {
+            eprintln!("No OnlyKey connected. Aborting.");
             return;
         },
+        Err(OnlyKeyError::Locked) => {
+            eprintln!("The connected OnlyKey is locked. Aborting.");
+            return;
+        },
+        Err(e) => {
+            eprintln!("Could not connect to the OnlyKey: {:?}", e);
+            return;
+        }
     };
 
     println!("Asking the connected OnlyKey for empty slots...
@@ -205,13 +227,13 @@ Press 'Enter' when you're ready to continue.");
     let _: String = read_line!();
 
     let mut password = if keys_slots.iter().any(|(index, _, _)| !key.keys().nth(*index).unwrap().has_unencrypted_secret()) {
-        rpassword::prompt_password("Please enter your key's password: ").unwrap()
+        rpassword::prompt_password("Please enter your key's password: ").expect("could not read password")
     } else {String::new()};
 
     for (index, slot, primary) in &keys_slots {
         let key = key.keys().nth(*index).unwrap();
         let component = key.component();
-        let parts = component.parts_as_secret().unwrap().clone();
+        let parts = component.parts_as_secret().expect("could not get secret from key").clone();
         let decrypted_parts = {
             let mut decrypted = parts.clone().decrypt_secret(&password.clone().into());
             while decrypted.is_err() {
