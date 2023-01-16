@@ -2,14 +2,15 @@ use std::{path::PathBuf, io};
 
 use chrono::{DateTime, Local};
 use clap::Parser;
-use ok_gpg_agent::config::{KeySlot, KeyType};
-use ok_gpg_agent::onlykey::OnlyKey;
+use anyhow::{Result, anyhow};
+use ok_gpg_agent::config::{KeyType, KeySlot};
+use ok_gpg_agent::onlykey::{OnlyKey, KeyRole};
 use sequoia_openpgp::Cert;
 use sequoia_openpgp::cert::ValidCert;
 use sequoia_openpgp::cert::amalgamation::ValidAmalgamation;
 use sequoia_openpgp::cert::prelude::ValidKeyAmalgamation;
+use sequoia_openpgp::crypto::mpi::SecretKeyMaterial;
 use sequoia_openpgp::packet::Key;
-use sequoia_openpgp::packet::key::{KeyParts, KeyRole};
 use sequoia_openpgp::parse::Parse;
 use sequoia_openpgp::policy::StandardPolicy;
 use sequoia_openpgp::types::{Curve};
@@ -110,10 +111,12 @@ fn main() {
         },
     };
 
-    println!("Asking the connected OnlyKey for empty slots...");
+    println!("Asking the connected OnlyKey for empty slots...
+Make sure your key is not yet in config mode or else the connection will fail.");
 
-    let mut empty_slots = onlykey.get_empty_key_slots().unwrap();
+    let mut empty_slots = onlykey.get_empty_key_slots().expect("could not communicate with the OnlyKey");
 
+    // Hold the key, the sot in which the key will be transfered and a boolean indicating if the key is the primary key
     let mut keys_slots = Vec::new();
 
     for &selected in &selected_keys {
@@ -124,8 +127,8 @@ fn main() {
                     2048 | 4096 => {
                         match empty_slots.iter().position(|slot| matches!(slot.r#type(), KeyType::Rsa(_)) ) {
                             Some(index) => {
-                                let slot = empty_slots.swap_remove(index);
-                                keys_slots.push((key_to_move, slot));
+                        let slot = empty_slots.remove(index);
+                        keys_slots.push((selected, slot, selected == 0));
                             }
                             None => {
                                 eprintln!("There is no empty slot for an RSA key. Aborting.");
@@ -148,8 +151,8 @@ fn main() {
                     Curve::NistP256 | Curve::Ed25519 | Curve::Cv25519 => {
                         match empty_slots.iter().position(|slot| matches!(slot.r#type(), KeyType::Ecc(_))) {
                             Some(index) => {
-                                let slot = empty_slots.swap_remove(index);
-                                keys_slots.push((key_to_move, slot));
+                                let slot = empty_slots.remove(index);
+                                keys_slots.push((selected, slot, selected == 0));
                             }
                             None => {
                                 eprintln!("There is no empty slot for an ECC key. Aborting.");
@@ -169,6 +172,81 @@ fn main() {
             },
         }
     }
+
+    // We have a slot for each key, proceed with secret extraction and writing
+
+    println!("The selected keys will be transfered as follow:");
+    for (index, slot, primary) in &keys_slots {
+        println!("Key \"{}\" => slot {}", key_info_str(&key.keys().nth(*index).unwrap(), *primary), slot);
+    }
+
+    print!("Please put your key in config mode by holding the '6' button for 5 seconds or more.
+Press 'Enter' when you're ready to continue.");
+    let _: String = read_line!();
+
+    let mut password = if keys_slots.iter().any(|(index, _, _)| !key.keys().nth(*index).unwrap().has_unencrypted_secret()) {
+        rpassword::prompt_password("Please enter your key's password: ").unwrap()
+    } else {String::new()};
+
+    for (index, slot, primary) in &keys_slots {
+        let key = key.keys().nth(*index).unwrap();
+        let component = key.component();
+        let parts = component.parts_as_secret().unwrap().clone();
+        let decrypted_parts = {
+            let mut decrypted = parts.clone().decrypt_secret(&password.clone().into());
+            while decrypted.is_err() {
+                println!("Error is: {:?}, part: {:#?}", decrypted, parts);
+                password = rpassword::prompt_password("Wrong password. Please re-enter your key's password: ").unwrap();
+                decrypted = parts.clone().decrypt_secret(&password.clone().into());
+            }
+            decrypted.unwrap()
+        };
+
+        let secret = decrypted_parts.secret();
+        if let sequoia_openpgp::packet::prelude::SecretKeyMaterial::Unencrypted(secret) = secret {
+            if let Err(e) = secret.map(|key_material| -> Result<()> {
+                let key_role = {
+                    if key.for_storage_encryption() || key.for_transport_encryption() {
+                        KeyRole::Encrypt
+                    } else {
+                        KeyRole::Sign
+                    }
+                };
+                match key_material {
+                    SecretKeyMaterial::RSA { d: _, p, q, u: _ } => {
+                        todo!();
+                    },
+                    SecretKeyMaterial::EdDSA { scalar } | SecretKeyMaterial::ECDSA { scalar } | SecretKeyMaterial::ECDH { scalar } => {
+                        let key_type = match key.mpis() {
+                            sequoia_openpgp::crypto::mpi::PublicKey::EdDSA { curve, q: _ } | sequoia_openpgp::crypto::mpi::PublicKey::ECDSA { curve, q: _ } | sequoia_openpgp::crypto::mpi::PublicKey::ECDH { curve, q: _, hash: _, sym: _ } => {
+                                match curve {
+                                    Curve::NistP256 => KeyType::Ecc(ok_gpg_agent::config::EccType::Nist256P1),
+                                    Curve::Ed25519 => KeyType::Ecc(ok_gpg_agent::config::EccType::Ed25519),
+                                    Curve::Cv25519 => KeyType::Ecc(ok_gpg_agent::config::EccType::Cv25519),
+                                    _ => return Err(anyhow!("Wrong key type")),
+                                }
+                            },
+                            _ => return Err(anyhow!("Non coherent key type")),
+                        };
+                        onlykey.set_private(*slot, key_type, key_role, &scalar.value_padded(32))?;
+                        Ok(())
+                    },
+                    _ => Err(anyhow!("Wrong key type")),
+                }
+            }) {
+                eprintln!("Could not transfer the private key \"{}\": {:?}", key_info_str(&key, *primary), e);
+                return;
+            } else {
+                println!("Key \"{}\" successfuly transfered to slot {}!", key_info_str(&key, *primary), slot);
+        }
+    }
+    }
+
+    println!("All keys sucessfuly transfered.");
+    for (index, slot, primary) in keys_slots {
+        println!("Key \"{}\" of ID {} transfered to slot {}", key_info_str(&key.keys().nth(index).unwrap(), primary), key.keys().nth(index).unwrap().fingerprint(), slot);
+    }
+
 }
 
 /// Display (println) the given key in a similar format as GPG does.
@@ -194,8 +272,8 @@ fn display_key(key: &ValidCert) {
 }
 
 fn key_info_str<'a, P, R, R2>(key: &ValidKeyAmalgamation<'a, P, R, R2>, primary: bool) -> String
-where P: 'a + KeyParts,
-      R: 'a + KeyRole,
+where P: 'a + sequoia_openpgp::packet::key::KeyParts,
+      R: 'a + sequoia_openpgp::packet::key::KeyRole,
       R2: Copy,
       ValidKeyAmalgamation<'a, P, R, R2>: ValidAmalgamation<'a, Key<P, R>>,
 {
@@ -212,8 +290,8 @@ where P: 'a + KeyParts,
 }
 
 fn has_secret<'a, P, R, R2>(key: &ValidKeyAmalgamation<'a, P, R, R2>) -> bool
-where P: 'a + KeyParts,
-      R: 'a + KeyRole,
+where P: 'a + sequoia_openpgp::packet::key::KeyParts,
+      R: 'a + sequoia_openpgp::packet::key::KeyRole,
       R2: Copy,
 {
     match key.key().optional_secret() {
@@ -226,8 +304,8 @@ where P: 'a + KeyParts,
 }
 
 fn algo_str<'a, P, R, R2>(key: &ValidKeyAmalgamation<'a, P, R, R2>) -> String
-where P: 'a + KeyParts,
-      R: 'a + KeyRole,
+where P: 'a + sequoia_openpgp::packet::key::KeyParts,
+      R: 'a + sequoia_openpgp::packet::key::KeyRole,
       R2: Copy,
 {
     match key.mpis() {
@@ -256,8 +334,8 @@ fn curve_to_str(curve: &Curve) -> String {
 }
 
 fn usage_str<'a, P, R, R2>(key: &ValidKeyAmalgamation<'a, P, R, R2>) -> String 
-where P: 'a + KeyParts,
-      R: 'a + KeyRole,
+where P: 'a + sequoia_openpgp::packet::key::KeyParts,
+      R: 'a + sequoia_openpgp::packet::key::KeyRole,
       R2: Copy,
       ValidKeyAmalgamation<'a, P, R, R2>: ValidAmalgamation<'a, Key<P, R>>,
 {
@@ -281,8 +359,8 @@ where P: 'a + KeyParts,
 }
 
 fn expiration_str<'a, P, R, R2>(key: &ValidKeyAmalgamation<'a, P, R, R2>) -> String 
-where P: 'a + KeyParts,
-      R: 'a + KeyRole,
+where P: 'a + sequoia_openpgp::packet::key::KeyParts,
+      R: 'a + sequoia_openpgp::packet::key::KeyRole,
       R2: Copy,
       ValidKeyAmalgamation<'a, P, R, R2>: ValidAmalgamation<'a, Key<P, R>>,
 {
