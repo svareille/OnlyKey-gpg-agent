@@ -20,7 +20,7 @@ use crate::gen_key::gen_key;
 /// 
 /// The `gpg` command must be available.
 #[derive(Parser, Debug)]
-#[clap(author, version, about, long_about = None)]
+#[clap(author, version)]
 struct Args {
     /// Identity from which to generate the new key.
     /// 
