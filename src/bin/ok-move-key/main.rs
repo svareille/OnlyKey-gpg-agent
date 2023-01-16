@@ -22,16 +22,44 @@ use text_io::read;
 #[clap(author, version)]
 struct Args {
     /// The path to an ASCII-armored private key or "-" if the key should be read from stdin.
-    keyfile: PathBuf,
+    /// Required unless --list-slots is present.
+    #[arg(required_unless_present_any=["list_slots"])]
+    keyfile: Option<PathBuf>,
+
+    /// List empty slots and exit.
+    #[arg(short='s', long, conflicts_with="keyfile")]
+    list_slots: bool
 }
 
 fn main() {
     let args = Args::parse();
 
-    let key = if args.keyfile == PathBuf::from("-") {
+    if args.list_slots {
+        let onlykey = match OnlyKey::hid_connect().unwrap() {
+            Some(ok) => ok,
+            None =>  {
+                println!("No OnlyKey connected. Aborting.");
+                return;
+            },
+        };
+        let empty_slots = onlykey.get_empty_key_slots().expect("could not communicate with the OnlyKey");
+
+        println!("Empty slots: {:?}", empty_slots);
+        return;
+    }
+
+    // From now we require keyfile to be set
+    if args.keyfile.is_none() {
+        eprintln!("Error: the keyfile argument must be present.");
+        return;
+    }
+
+    let keyfile = args.keyfile.unwrap();
+
+    let key = if keyfile == PathBuf::from("-") {
         Cert::from_reader(io::stdin()).expect("couldn't read key from stdin")
     } else {
-        Cert::from_file(&args.keyfile).unwrap_or_else(|e| panic!("couldn't read key from file {}: {}", args.keyfile.display(), e))
+        Cert::from_file(&keyfile).unwrap_or_else(|e| panic!("couldn't read key from file {}: {}", keyfile.display(), e))
     };
 
     if !key.is_tsk() {
