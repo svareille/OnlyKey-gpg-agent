@@ -21,8 +21,18 @@ const OKSETTIME: u8 = 0xe4;
 const OKSIGN: u8 = 237;
 const OKDECRYPT: u8 = 240;
 const OKGETPUBKEY: u8 = 236;
+const OKSETPRIV: u8 = 239;
 
 pub const OK_DEVICE_IDS: [(u16, u16); 2] = [(0x16C0, 0x0486), (0x1d50, 0x60fc)];
+
+#[derive(Debug)]
+#[derive(Copy, Clone, PartialEq)]
+#[repr(u8)]
+pub enum KeyRole {
+    Encrypt = 32,
+    Sign = 64,
+    Backup = 128 + 32,
+}
 
 
 #[derive(Error, Debug)]
@@ -247,6 +257,9 @@ impl OnlyKey {
         Ok(())
     }
 
+    /// Send a payload to the given slot.
+    /// 
+    /// Split the message in chunks if required.
     pub fn send_with_slot(&self, msg_type: u8, slot: u8, payload: &[u8]) -> Result<(), OnlyKeyError> {
         trace!("Sending message to device");
 
@@ -510,6 +523,43 @@ impl OnlyKey {
 
         error!("Decryption failed. Got {:?}", result);
         Err(OnlyKeyError::DecryptFailed)
+    }
+
+    pub fn set_private(&self, slot: KeySlot, key_type: KeyType, key_role: KeyRole, key: &[u8]) -> Result<(), OnlyKeyError> {
+        // buffer[6] = type
+        // buffer[5] = slot
+        // buffer[4] = msgtype
+        // buffer[0] = 0xBA for last packet // Optional
+        let mut key_type: u8 = match key_type {
+            KeyType::Rsa(size) => {
+                (size / 1024) as u8
+            },
+            KeyType::Ecc(ecc_type) => {
+                match ecc_type {
+                    EccType::Unkwnow => return Err(OnlyKeyError::InvalidEccType),
+                    EccType::Ed25519 | EccType::Cv25519 => 1,
+                    EccType::Nist256P1 => 2,
+                    EccType::Secp256K1 => 3,
+                }
+            },
+        };
+
+        key_type |= key_role as u8;
+
+        let max_payload = REPORT_SIZE - MESSAGE_HEADER.len() - 3;
+
+        let chunks = key.chunks(max_payload);
+        
+        for chunk in chunks {
+            let mut payload = vec![slot as u8, key_type];
+            payload.extend_from_slice(chunk);
+            self.send(OKSETPRIV, &payload)?;
+        }
+
+        let response = self.read_timeout(Some(Duration::from_millis(100)))?;
+        self.error_parser(&response, &KeyInfo::StoredKey(StoredKeyInfo { slot, keygrip: String::new(), size: 0 }))?;
+
+        Ok(())
     }
 
     /// Return a list of empty key slots.
