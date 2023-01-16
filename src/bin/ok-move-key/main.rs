@@ -123,13 +123,13 @@ Make sure your key is not yet in config mode or else the connection will fail.")
         let key_to_move = key.keys().nth(selected).unwrap();
         match key_to_move.mpis() {
             sequoia_openpgp::crypto::mpi::PublicKey::RSA { .. } => {
-                        match empty_slots.iter().position(|slot| matches!(slot.r#type(), KeyType::Rsa(_)) ) {
-                            Some(index) => {
+                match empty_slots.iter().position(|slot| matches!(slot.r#type(), KeyType::Rsa(_)) ) {
+                    Some(index) => {
                         let slot = empty_slots.remove(index);
                         keys_slots.push((selected, slot, selected == 0));
-                            }
-                            None => {
-                                eprintln!("There is no empty slot for an RSA key. Aborting.");
+                    }
+                    None => {
+                        eprintln!("There is no empty slot for an RSA key. Aborting.");
                         return;
                     }
                 }
@@ -206,7 +206,11 @@ Press 'Enter' when you're ready to continue.");
                 };
                 match key_material {
                     SecretKeyMaterial::RSA { d: _, p, q, u: _ } => {
-                        todo!();
+                        let key_type = KeyType::Rsa(key.mpis().bits().unwrap_or_default());
+                        let mut secret_val: Vec<u8> = p.value_padded(key.mpis().bits().unwrap_or_default() / 2 / 8).to_vec();
+                        secret_val.extend_from_slice(&q.value_padded(key.mpis().bits().unwrap_or_default() / 2 / 8));
+                        onlykey.set_private(*slot, key_type, key_role, &secret_val)?;
+                        Ok(())
                     },
                     SecretKeyMaterial::EdDSA { scalar } | SecretKeyMaterial::ECDSA { scalar } | SecretKeyMaterial::ECDH { scalar } => {
                         let key_type = match key.mpis() {
@@ -230,8 +234,8 @@ Press 'Enter' when you're ready to continue.");
                 return;
             } else {
                 println!("Key \"{}\" successfuly transfered to slot {}!", key_info_str(&key, *primary), slot);
+            }
         }
-    }
     }
 
     println!("All keys sucessfuly transfered.");
