@@ -21,6 +21,25 @@ mod assuan;
 mod agent;
 mod csexp;
 
+#[derive(Parser, Debug)]
+#[clap(author, version, about, long_about = None)]
+struct Args {
+   /// Set the name of the home directory
+   /// This argument is passed to the original gpg-agent.
+   #[clap(long)]
+   homedir: Option<PathBuf>,
+
+   /// Unused, here for compatibility reasons.
+   /// This argument is passed to the original gpg-agent.
+   #[clap(long, action)]
+   use_standard_socket: bool,
+
+   /// Start the agent as a daemon.
+   /// This argument is passed to the original gpg-agent.
+   #[clap(long, action)]
+   daemon: bool,
+}
+
 fn main() -> Result<()> {
 
     setup_logger().expect("Problem with logger");
@@ -228,25 +247,6 @@ fn main() -> Result<()> {
 
     info!("Exiting...");
     Ok(())
-}
-
-#[derive(Parser, Debug)]
-#[clap(author, version, about, long_about = None)]
-struct Args {
-   /// Set the name of the home directory
-   /// This argument is passed to the original gpg-agent.
-   #[clap(long)]
-   homedir: Option<PathBuf>,
-
-   /// Unused, here for compatibility reasons.
-   /// This argument is passed to the original gpg-agent.
-   #[clap(long, action)]
-   use_standard_socket: bool,
-
-   /// Start the agent as a daemon.
-   /// This argument is passed to the original gpg-agent.
-   #[clap(long, action)]
-   daemon: bool,
 }
 
 lazy_static! {
