@@ -1,5 +1,6 @@
 use std::fmt::Debug;
 
+use base64::{engine::general_purpose, Engine};
 use chrono::{Utc, DateTime, Duration};
 use ok_gpg_agent::{config::{DerivedKeyInfo, EccType, KeyInfo}, onlykey::OnlyKey};
 use sha1::Sha1;
@@ -90,9 +91,11 @@ pub(crate) fn gen_key(identity: String, key_kind: EccKind, creation: DateTime<Ut
 
     let mut armored = "-----BEGIN PGP PUBLIC KEY BLOCK-----\n".to_owned();
     armored += "\n";
-    armored += &base64::encode(&transferable_key).as_bytes().chunks(76).map(|chunk| String::from_utf8(chunk.to_vec()).unwrap() + "\n").collect::<String>();
+    armored += &general_purpose::STANDARD.encode(&transferable_key).as_bytes().chunks(76).map(|chunk| String::from_utf8(chunk.to_vec()).unwrap() + "\n").collect::<String>();
     let crc = crc24::hash_raw(&transferable_key);
-    armored += &format!("={}\n", base64::encode(&crc.to_be_bytes()[1..]));
+    armored += "=";
+    general_purpose::STANDARD.encode_string(&crc.to_be_bytes()[1..], &mut armored);
+    armored += "\n";
     armored += "-----END PGP PUBLIC KEY BLOCK-----";
 
     Ok(armored)
