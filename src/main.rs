@@ -24,36 +24,39 @@ mod csexp;
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
 struct Args {
-   /// Set the name of the home directory
-   /// This argument is passed to the original gpg-agent.
-   #[clap(long)]
-   homedir: Option<PathBuf>,
+    /// Set the name of the home directory
+    /// This argument is passed to the original gpg-agent.
+    #[arg(long)]
+    homedir: Option<PathBuf>,
 
-   /// Unused, here for compatibility reasons.
-   /// This argument is passed to the original gpg-agent.
-   #[clap(long, action)]
-   use_standard_socket: bool,
+    /// Unused, here for compatibility reasons.
+    /// This argument is passed to the original gpg-agent.
+    #[arg(long, action)]
+    use_standard_socket: bool,
 
-   /// Start the agent as a daemon.
-   /// This argument is passed to the original gpg-agent.
-   #[clap(long, action)]
-   daemon: bool,
+    /// Start the agent as a daemon.
+    /// This argument is passed to the original gpg-agent.
+    #[arg(long, action)]
+    daemon: bool,
+
+    /// Load the configuration file (`ok-agent.toml`), check if it's valid and exit.
+    #[arg(long, conflicts_with_all=["daemon", "use_standard_socket"])]
+    check_conf: bool,
 }
 
 fn main() -> Result<()> {
-
     setup_logger().expect("Problem with logger");
 
-    let args = Args::try_parse().map_err(|e| {
-        error!("Failed to parse command line: {:?}", e);
-        e
-    })?;
+    if let Err(e) = Args::try_parse() {
+        match e.kind() {
+            clap::error::ErrorKind::DisplayVersion | clap::error::ErrorKind::DisplayHelp => {},
+            _ => error!("Failed to parse command line: {:?}", e),
+        }
+    }
+
+    let args = Args::parse();
     
     info!("Agent started with arguments: {:?}", args);
-
-    if args.daemon {
-        daemonize()?;
-    }
 
     let homedir = match args.homedir.as_deref() {
         Some(home) => home.to_owned(),
@@ -65,6 +68,23 @@ fn main() -> Result<()> {
     let mut config_file = homedir.clone();
 
     config_file.push("ok-agent.toml");
+
+    if args.check_conf {
+        println!("Checking configuration from {}...", config_file.display());
+        match Settings::new(config_file.as_path()) {
+            Ok(settings) => {
+                println!("Config file successfully read: \n{:#?}", settings);
+            },
+            Err(e) => {
+                println!("Config file is invalid: {:?}", e);
+            }
+        }
+        return Ok(());
+    }
+
+    if args.daemon {
+        daemonize()?;
+    }
 
     let settings = Settings::new(config_file.as_path()).map_err(|e| {
         error!("Could not load settings: {:?}", e);
