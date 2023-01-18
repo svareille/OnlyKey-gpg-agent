@@ -55,6 +55,25 @@ fn main() -> Result<()> {
     }
 
     let args = Args::parse();
+
+    if args.check_conf {
+        let homedir = match args.homedir.as_deref() {
+            Some(home) => home.to_owned(),
+            None => utils::get_homedir().unwrap_or_default(),
+        };
+        let mut config_file = homedir.clone();
+        config_file.push("ok-agent.toml");
+        println!("Checking configuration from {}...", config_file.display());
+        match Settings::new(config_file.as_path()) {
+            Ok(settings) => {
+                println!("Config file successfully read: \n{:#?}", settings);
+            },
+            Err(e) => {
+                println!("Config file is invalid: {:?}", e);
+            }
+        }
+        return Ok(());
+    }
     
     info!("Agent started with arguments: {:?}", args);
 
@@ -68,19 +87,6 @@ fn main() -> Result<()> {
     let mut config_file = homedir.clone();
 
     config_file.push("ok-agent.toml");
-
-    if args.check_conf {
-        println!("Checking configuration from {}...", config_file.display());
-        match Settings::new(config_file.as_path()) {
-            Ok(settings) => {
-                println!("Config file successfully read: \n{:#?}", settings);
-            },
-            Err(e) => {
-                println!("Config file is invalid: {:?}", e);
-            }
-        }
-        return Ok(());
-    }
 
     if args.daemon {
         daemonize()?;
