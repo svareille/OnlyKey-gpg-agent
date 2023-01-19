@@ -305,7 +305,7 @@ impl OnlyKey {
             KeyInfo::StoredKey(key) => {
                 let slot = key.slot_nb();
                 data = vec![slot, 0];
-                // TODO: place in data the exact key type or ask OnlyKey developer to patch the firmware
+                // MAYBE: place in data the exact key type or ask OnlyKey developer to patch the firmware
             },
             KeyInfo::DerivedKey(key) => {
                 let identity = Self::gpg_identity_derivation(&key.identity);
