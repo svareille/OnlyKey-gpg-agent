@@ -1,5 +1,6 @@
 use std::fmt::Debug;
 
+use anyhow::{Result, bail, Context};
 use base64::{engine::general_purpose, Engine};
 use chrono::{Utc, DateTime, Duration};
 use ok_gpg_agent::{config::{DerivedKeyInfo, EccType, KeyInfo}, onlykey::OnlyKey};
@@ -7,13 +8,13 @@ use sha1::Sha1;
 use sha2::{Digest, Sha512};
 use crate::{EccKind};
 
-pub(crate) fn gen_key(identity: String, key_kind: EccKind, creation: DateTime<Utc>, validity: Duration) -> Result<String, ()> {
+pub(crate) fn gen_key(identity: String, key_kind: EccKind, creation: DateTime<Utc>, validity: Duration) -> Result<String> {
 
-    let onlykey = match OnlyKey::hid_connect().unwrap() {
+    let onlykey = match OnlyKey::hid_connect().context("Could not connect to the OnlyKey")? {
         Some(ok) => ok,
         None =>  {
-            println!("No OnlyKey connected. Aborting.");
-            return Err(());
+            eprintln!("No OnlyKey connected. Aborting.");
+            bail!("No OnlyKey connected");
         },
     };
 
@@ -26,7 +27,7 @@ pub(crate) fn gen_key(identity: String, key_kind: EccKind, creation: DateTime<Ut
         },
         keygrip: String::new(),
     });
-    let verifying_key = onlykey.pubkey(&sign_key_info).unwrap();
+    let verifying_key = onlykey.pubkey(&sign_key_info).context("Could not get the verifying public key")?;
 
     let decrypt_key_info = KeyInfo::DerivedKey(DerivedKeyInfo{
         identity: identity.clone(),
@@ -38,7 +39,7 @@ pub(crate) fn gen_key(identity: String, key_kind: EccKind, creation: DateTime<Ut
         keygrip: String::new(),
     });
     
-    let encryption_key = onlykey.pubkey(&decrypt_key_info).unwrap();
+    let encryption_key = onlykey.pubkey(&decrypt_key_info).context("Could not get the encryption public key")?;
 
     // Generating a [Transferable Public Key](https://www.rfc-editor.org/rfc/rfc4880#section-11.1)
 
@@ -65,7 +66,7 @@ pub(crate) fn gen_key(identity: String, key_kind: EccKind, creation: DateTime<Ut
     let user_id_body = gen_user_id_body(&identity);
     let primary_user_id_packet = gen_packet(PacketTag::UserId, &user_id_body);
 
-    let user_id_signature_body = gen_user_id_signature_body(&pubkey_body, &user_id_body, signature_algo, creation, validity, &onlykey, &sign_key_info);
+    let user_id_signature_body = gen_user_id_signature_body(&pubkey_body, &user_id_body, signature_algo, creation, validity, &onlykey, &sign_key_info).context("Could not generate the User ID")?;
     let user_id_signature_packet = gen_packet(PacketTag::Signature, &user_id_signature_body);
 
     let subkey_body = gen_public_key_body(
@@ -80,7 +81,7 @@ pub(crate) fn gen_key(identity: String, key_kind: EccKind, creation: DateTime<Ut
     );
     let subkey_packet = gen_packet(PacketTag::PublicSubkey, &subkey_body);
 
-    let subkey_signature_body = gen_subkey_signature_body(&pubkey_body, &subkey_body,signature_algo, creation, validity, &onlykey, &sign_key_info);
+    let subkey_signature_body = gen_subkey_signature_body(&pubkey_body, &subkey_body,signature_algo, creation, validity, &onlykey, &sign_key_info).context("Could not generate the subkey signature")?;
     let subkey_signature_packet = gen_packet(PacketTag::Signature, &subkey_signature_body);
 
     let mut transferable_key = primary_key_packet;
@@ -467,7 +468,7 @@ fn gen_user_id_body(identity: &str) -> Vec<u8> {
 }
 
 /// https://www.rfc-editor.org/rfc/rfc4880#section-5.2.3
-fn gen_user_id_signature_body(key_packet_body: &[u8], user_id_body: &[u8], algo: PublicKeyAlgorithm, creation: DateTime<Utc>, expire: Duration, onlykey: &OnlyKey, sign_key: &KeyInfo) -> Vec<u8> {
+fn gen_user_id_signature_body(key_packet_body: &[u8], user_id_body: &[u8], algo: PublicKeyAlgorithm, creation: DateTime<Utc>, expire: Duration, onlykey: &OnlyKey, sign_key: &KeyInfo) -> Result<Vec<u8>> {
     let mut packet = vec![
         4, // Version
         0x13, // Positive certification
@@ -541,7 +542,7 @@ fn gen_user_id_signature_body(key_packet_body: &[u8], user_id_body: &[u8], algo:
     let (b1, b2, b3) = OnlyKey::compute_challenge(&OnlyKey::data_to_send(&hash, sign_key));
     println!("Touch your OnlyKey or enter the following 3 digit challenge code to authorize signing:\n{} {} {}", b1, b2, b3);
 
-    let res = onlykey.sign(&hash, sign_key).unwrap();
+    let res = onlykey.sign(&hash, sign_key).context("Could not sign the User ID")?;
     
     let r = res[..32].to_vec();
     let s = res[32..].to_vec();
@@ -554,10 +555,10 @@ fn gen_user_id_signature_body(key_packet_body: &[u8], user_id_body: &[u8], algo:
     packet.extend(r.to_vec());
     packet.extend(s.to_vec());
 
-    packet
+    Ok(packet)
 }
 
-fn gen_subkey_signature_body(key_packet_body: &[u8], subkey_body: &[u8], algo: PublicKeyAlgorithm, creation: DateTime<Utc>, expire: Duration, onlykey: &OnlyKey, sign_key: &KeyInfo) -> Vec<u8> {
+fn gen_subkey_signature_body(key_packet_body: &[u8], subkey_body: &[u8], algo: PublicKeyAlgorithm, creation: DateTime<Utc>, expire: Duration, onlykey: &OnlyKey, sign_key: &KeyInfo) -> Result<Vec<u8>> {
     let mut packet = vec![
         4, // Version
         0x18, // Subkey Binding Signature
@@ -608,7 +609,7 @@ fn gen_subkey_signature_body(key_packet_body: &[u8], subkey_body: &[u8], algo: P
     let (b1, b2, b3) = OnlyKey::compute_challenge(&OnlyKey::data_to_send(&hash, sign_key));
     println!("Touch your OnlyKey or enter the following 3 digit challenge code to authorize signing:\n{} {} {}", b1, b2, b3);
 
-    let res = onlykey.sign(&hash, sign_key).unwrap();
+    let res = onlykey.sign(&hash, sign_key).context("Could not sign the subkey")?;
 
     let r = Mpi{value: res[..32].to_vec()};
     let s = Mpi{value: res[32..].to_vec()};
@@ -616,7 +617,7 @@ fn gen_subkey_signature_body(key_packet_body: &[u8], subkey_body: &[u8], algo: P
     packet.extend(r.to_vec());
     packet.extend(s.to_vec());
 
-    packet
+    Ok(packet)
 }
 
 fn fingerprint(key_body: &[u8]) -> Vec<u8> {

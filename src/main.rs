@@ -59,7 +59,13 @@ fn main() -> Result<()> {
     if args.check_conf {
         let homedir = match args.homedir.as_deref() {
             Some(home) => home.to_owned(),
-            None => utils::get_homedir().unwrap_or_default(),
+            None => match utils::get_homedir() {
+                Ok(home) => home,
+                Err(e) => {
+                    eprintln!("Could not get the homedir: {e:?}");
+                    bail!("check-conf failed");
+                }
+            },
         };
         let mut config_file = homedir.clone();
         config_file.push("ok-agent.toml");
@@ -69,7 +75,7 @@ fn main() -> Result<()> {
                 println!("Config file successfully read: \n{:#?}", settings);
             },
             Err(e) => {
-                println!("Config file is invalid: {:?}", e);
+                println!("Config file is invalid: {e:?}");
             }
         }
         return Ok(());
@@ -79,10 +85,16 @@ fn main() -> Result<()> {
 
     let homedir = match args.homedir.as_deref() {
         Some(home) => home.to_owned(),
-        None => utils::get_homedir().unwrap_or_default(),
+        None => match utils::get_homedir() {
+            Ok(home) => home,
+            Err(e) => {
+                error!("Could not get the homedir: {e:?}");
+                bail!(e);
+            }
+        },
     };
 
-    info!("Working with homedir {:?}", homedir.display());
+    info!("Working with homedir {}", homedir.display());
 
     let mut config_file = homedir.clone();
 

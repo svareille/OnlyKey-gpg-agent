@@ -7,8 +7,8 @@ use thiserror::Error;
 pub enum SexpError<'a> {
     #[error("More data than needed to form an S-Expression")]
     MoreData(Sexp, &'a [u8]),
-    #[error("Invalid format")]
-    InvalidFormat,
+    #[error("Invalid format: {0}")]
+    InvalidFormat(String),
 }
 
 #[derive(Debug)]
@@ -24,7 +24,13 @@ impl Sexp {
     fn parse_atom(s: &[u8]) -> Result<Sexp, SexpError> {
         let (size, s) = {
             let mut split = s.splitn(2, |&e| e == b':');
-            (std::str::from_utf8(split.next().unwrap()).map_err(|_| SexpError::InvalidFormat)?.parse::<usize>().map_err(|_| SexpError::InvalidFormat)?, split.next().unwrap_or_default())
+            match split.next() {
+                Some(item) => (
+                    std::str::from_utf8(item).ok().and_then(|item| item.parse::<usize>().ok() ).ok_or(SexpError::InvalidFormat("Atom's first part is not a number".to_owned()))?,
+                    split.next().ok_or(SexpError::InvalidFormat("Atom's second part is empty".to_owned()))?),
+                None => return Err(SexpError::InvalidFormat("Input is empty".to_owned())),
+            }
+            
         };
         let atom = Sexp::Atom(s[..size].to_vec());
         let s = &s[size..];
@@ -52,10 +58,10 @@ impl Sexp {
                     Ok(_) => {
                         // Should never reach that: it means that the S-Exp is ill-formed,
                         // missing closing parenthese.
-                        return Err(SexpError::InvalidFormat);
+                        return Err(SexpError::InvalidFormat("Unexpected EOF".to_owned()));
                     }
-                    Err(SexpError::InvalidFormat) => {
-                        return Err(SexpError::InvalidFormat);
+                    Err(SexpError::InvalidFormat(s)) => {
+                        return Err(SexpError::InvalidFormat(s));
                     }
                 }
             }
@@ -163,7 +169,7 @@ mod tests {
     #[test]
     fn parse_wrong_parenthese() {
         let s = b"(7:enc-val(4:ecdh(1:s10:abcdefghij)(1:e5:12345)";
-        assert_eq!(Sexp::parse(s), Err(SexpError::InvalidFormat));
+        assert_eq!(Sexp::parse(s), Err(SexpError::InvalidFormat("Unexpected EOF".to_owned())));
     }
 
     #[test]

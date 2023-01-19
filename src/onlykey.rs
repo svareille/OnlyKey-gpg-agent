@@ -347,7 +347,7 @@ impl OnlyKey {
             }
             if let KeyType::Rsa(0) = key.r#type() {
                 // We don't actually know the size, so we guess
-                if got_last_packet.is_some() && got_last_packet.unwrap().elapsed() >= Duration::from_millis(100) {
+                if matches!(got_last_packet, Some(tm) if tm.elapsed() >= Duration::from_millis(100)) {
                     // It seems we got everything
                     break;
                 }
@@ -474,13 +474,12 @@ impl OnlyKey {
                         // We got a part of the plaintext. Check which algorithm is in use to
                         // know how much data is sent
 
-                        if key_len.is_none() {
-                            key_len = Some(openpgp_cipher_get_algo_keylen(part[0])/8);
-                        }
+                        let key_len = *key_len.get_or_insert(openpgp_cipher_get_algo_keylen(part[0])/8);
+
                         result.extend(part);
 
-                        if result.len() >= key_len.unwrap()+3 {
-                            result.resize(key_len.unwrap()+3, 0);
+                        if result.len() >= key_len+3 {
+                            result.resize(key_len+3, 0);
                             break;
                         }
                     }

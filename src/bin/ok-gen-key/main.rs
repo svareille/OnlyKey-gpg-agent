@@ -1,6 +1,6 @@
 use std::{process::{Command, Stdio}, io::Write, path::{PathBuf, Path}, fs::{File, OpenOptions}};
 
-use anyhow::{Result, bail, anyhow};
+use anyhow::{Result, bail, anyhow, Context};
 
 use chrono::{DateTime, Local, Duration, NaiveDate, TimeZone};
 use clap::{Parser, ValueEnum};
@@ -88,7 +88,7 @@ struct Args {
     export_config: Option<Option<PathBuf>>,
 }
 
-fn main() {
+fn main() -> Result<()> {
     let mut args = Args::parse();
 
     if args.time.is_none() {
@@ -125,7 +125,7 @@ Key is valid for? ");
                     if val.is_zero() {
                         println!("Key does not expire at all.");
                     } else {
-                        println!("Key expires at {}.", expire_at(val, args.time.unwrap()).unwrap());
+                        println!("Key expires at {}.", expire_at(val, args.time.unwrap()).context("Could not compute expiration time")?);
                     }
                     println!("Is this correct? (y/N)");
                     if let 'y' = read!() {
@@ -155,7 +155,8 @@ The identity string will be formed as "Real name (Comment) <Email>""#);
                 email = Some(line.trim().to_owned());
                 while !email.as_ref().unwrap().is_empty() && !validate_email(email.as_ref().unwrap()) {
                     print!("Email address: ");
-                    email = Some(read_line!());
+                    let line: String = read_line!();
+                    email = Some(line.trim().to_owned());
                 }
             }
 
@@ -197,7 +198,7 @@ The identity string will be formed as "Real name (Comment) <Email>""#);
                     'O' | 'o' => break 'identity,
                     'Q' | 'q' => {
                         println!("Key generation aborted.");
-                        return;
+                        return Ok(());
                     },
                     'N' | 'n' => {
                         name = None;
@@ -234,7 +235,7 @@ The identity string will be formed as "Real name (Comment) <Email>""#);
     let validity = args.validity.unwrap();
     let creation = args.time.unwrap();
 
-    println!("About to generate a {:?} key, valid until {} for the identity \"{}\"", key_kind, expire_at(validity, creation).unwrap() , identity);
+    println!("About to generate a {:?} key, valid until {} for the identity \"{}\"", key_kind, expire_at(validity, creation).context("Could not compute expiration time")? , identity);
     println!("To regenerate the same key, use the same parameters and add \"--time {}\"", creation.timestamp());
     println!();
     println!("You will be asked twice to authorize two signing operation.
@@ -244,13 +245,13 @@ Press Enter when you are ready to continue.");
 
     std::io::stdin().read_line(&mut String::new()).unwrap();
 
-    let armored_key = gen_key(identity.clone(), key_kind, creation.into(), validity).unwrap();
+    let armored_key = gen_key(identity.clone(), key_kind, creation.into(), validity).context("Could not generate the key")?;
 
     if args.export_key || args.auto {
-        gpg_export_key(&armored_key, &args.homedir).unwrap();
+        gpg_export_key(&armored_key, &args.homedir).context("Could not export the generated key into the keyring")?;
     }
 
-    let keygrips = keygrips_from_gpg(&armored_key).unwrap();
+    let keygrips = keygrips_from_gpg(&armored_key).context("Could not get the keygrip of the generated key")?;
 
     let sign_key_info = KeyInfo::DerivedKey(DerivedKeyInfo{
         identity: identity.clone(),
@@ -275,8 +276,8 @@ Press Enter when you are ready to continue.");
 
     match args.output {
         Some(filename) => {
-            let mut file = File::create(&filename).unwrap_or_else(|_| panic!("Unable to open file {}", filename.display()));
-            file.write_all(armored_key.as_bytes()).unwrap_or_else(|_| panic!("Unable to write key to file {}", filename.display()));
+            let mut file = File::create(&filename).with_context(||format!("Unable to open file {}", filename.display()))?;
+            file.write_all(armored_key.as_bytes()).with_context(|| format!("Unable to write key to file {}", filename.display()))?;
         },
         None => {
             println!("Your public key:\n{}", armored_key);
@@ -285,27 +286,25 @@ Press Enter when you are ready to continue.");
     }
     
     if args.export_config.is_some() || args.auto {
-        match args.export_config {
-            Some(Some(filename)) => {
-                append_config_to_file(&dummy_settings, &filename).unwrap();
-                println!("Configuration written to {}", filename.display());
-            },
+        let config_file = match args.export_config {
+            Some(Some(filename)) => filename,
             Some(None) | None => {
                 let mut config_file = match args.homedir.as_deref() {
                     Some(home) => home.to_owned(),
-                    None => utils::get_homedir().unwrap_or_default(),
+                    None => utils::get_homedir().context("Could not get the homedir")?,
                 };
             
                 config_file.push("ok-agent.toml");
-                append_config_to_file(&dummy_settings, &config_file).unwrap();
-                println!("Configuration written to {}", config_file.display());
+                config_file
             },
-        }
+        };
+        append_config_to_file(&dummy_settings, &config_file).with_context(|| format!("Could not append the configuration to the config file {}", config_file.display()))?;
+        println!("Configuration written to {}", config_file.display());
     } else {
         println!("Please add the following lines to your 'ok-agent.toml':");
-        println!("{}", toml::to_string(&dummy_settings).unwrap());
+        println!("{}", toml::to_string(&dummy_settings).context("Could not serialize the configuration to TOML")?);
     }
-
+    Ok(())
 }
 
 #[derive(Serialize)]
@@ -468,7 +467,7 @@ fn append_config_to_file(dummy_settings: &DummySettings, filename: &Path) -> Res
         .append(true)
         .open(&filename).map_err(|e| anyhow!("Unable to open file {}: {:?}", filename.display(), e))?;
     file.write_all(b"\n\n")?;
-    file.write_all(toml::to_string(&dummy_settings).unwrap().as_bytes()).map_err(|e| anyhow!("Unable to write settings to file {}: {:?}", filename.display(), e))
+    file.write_all(toml::to_string(&dummy_settings).context("Could not serialize the configuration to TOML")?.as_bytes()).with_context(|| format!("Unable to write settings to file {}", filename.display()))
 }
 
 #[cfg(windows)]
