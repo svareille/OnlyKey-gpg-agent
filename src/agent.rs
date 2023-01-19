@@ -70,21 +70,29 @@ pub fn handle_client(mut client: AssuanClient, mut server: AssuanServer, my_agen
                     let mut processed = false;
                     if my_agent.lock().unwrap().check_ready() {
                         if let Some(param) = parameters.as_ref().and_then(|param| String::from_utf8(param.clone()).ok()) {
-                            let key_info_cmd = KeyInfoCommand::parse(param.split_ascii_whitespace());
-                            if key_info_cmd.list {
-                                todo!();
-                            } else if key_info_cmd.ssh_list {
-                                // Do nothing for now
-                            } else if my_agent.lock().unwrap().get_known_keygrips().contains(&key_info_cmd.keygrip) {
+
+                            fn send_keyinfo(client: &mut AssuanClient, keygrip: &str, data: bool) -> Result<()> {
                                 // Idea: get the slot label from OnlyKey as the IDSTR parameter
-                                let response = format!("{} T ONLYKEY - - C - - -", key_info_cmd.keygrip);
+                                let response = format!("{} T ONLYKEY - - C - - -", keygrip);
                                 debug!("Sending '{}' to client", response);
-                                if key_info_cmd.data {
+                                if data {
                                     client.send(AssuanResponse::Data(response.into_bytes()))?;
                                 } else {
                                     client.send(AssuanResponse::Processing {
                                         keyword: "KEYINFO".to_owned(), info: Some(response) })?;
                                 }
+                                Ok(())
+                            }
+
+                            let key_info_cmd = KeyInfoCommand::parse(param.split_ascii_whitespace());
+                            if key_info_cmd.list {
+                                for keygrip in my_agent.lock().unwrap().get_known_keygrips() {
+                                    send_keyinfo(&mut client, &keygrip, key_info_cmd.data)?;
+                                }
+                            } else if key_info_cmd.ssh_list {
+                                // Do nothing, let the underlying agent handle this
+                            } else if my_agent.lock().unwrap().get_known_keygrips().contains(&key_info_cmd.keygrip) {
+                                send_keyinfo(&mut client, &key_info_cmd.keygrip, key_info_cmd.data)?;
                                 client.send_ok("")?;
                                 processed = true;
                             }
