@@ -2,9 +2,9 @@ use std::{path::PathBuf, io};
 
 use chrono::{DateTime, Local};
 use clap::Parser;
-use anyhow::{Result, anyhow};
+use anyhow::{Result, anyhow, bail, Context};
 use ok_gpg_agent::config::KeyType;
-use ok_gpg_agent::onlykey::{OnlyKey, KeyRole, OnlyKeyError};
+use ok_gpg_agent::onlykey::{OnlyKey, KeyRole};
 use sequoia_openpgp::Cert;
 use sequoia_openpgp::cert::ValidCert;
 use sequoia_openpgp::cert::amalgamation::ValidAmalgamation;
@@ -31,58 +31,41 @@ struct Args {
     list_slots: bool
 }
 
-fn main() {
+fn main() -> Result<()> {
     let args = Args::parse();
 
     if args.list_slots {
-        let onlykey = match OnlyKey::hid_connect() {
-            Ok(Some(ok)) => ok,
-            Ok(None) =>  {
-                eprintln!("No OnlyKey connected. Aborting.");
-                return;
+        let onlykey = match OnlyKey::hid_connect().context("Could not connect to the OnlyKey:")? {
+            Some(ok) => ok,
+            None =>  {
+                bail!("No OnlyKey connected");
             },
-            Err(OnlyKeyError::Locked) => {
-                eprintln!("The connected OnlyKey is locked. Aborting.");
-                return;
-            },
-            Err(e) => {
-                eprintln!("Could not connect to the OnlyKey: {:?}", e);
-                return;
-            }
         };
-        let empty_slots = onlykey.get_empty_key_slots().expect("could not communicate with the OnlyKey");
+        let empty_slots = onlykey.get_empty_key_slots().context("Could not get the empty slots")?;
 
         println!("Empty slots: {:?}", empty_slots);
-        return;
+        return Ok(());
     }
 
     // From now we require keyfile to be set
     if args.keyfile.is_none() {
-        eprintln!("Error: the keyfile argument must be present.");
-        return;
+        bail!("The keyfile argument must be present");
     }
 
     let keyfile = args.keyfile.unwrap();
 
     let key = if keyfile == PathBuf::from("-") {
-        Cert::from_reader(io::stdin()).expect("couldn't read key from stdin")
+        Cert::from_reader(io::stdin()).context("Couldn't read key from stdin")?
     } else {
-        match Cert::from_file(&keyfile) {
-            Ok(cert) => cert,
-            Err(e) => {
-                eprintln!("couldn't read key from file {}: {}", keyfile.display(), e);
-                return;
-            }
-        }
+        Cert::from_file(&keyfile).with_context(|| format!("Couldn't read key from file {}", keyfile.display()))?
     };
 
     if !key.is_tsk() {
-        eprintln!("The given key does not contain a secret key!");
-        return;
+        bail!("The given key does not contain a secret key!");
     }
 
     let p = &StandardPolicy::new();
-    let key = key.with_policy(p, None).expect("key is not valid");
+    let key = key.with_policy(p, None).context("Key is not valid")?;
 
     println!();
     display_key(&key);
@@ -145,26 +128,17 @@ fn main() {
     // The selection have been approved
     // Begin interaction with OnlyKey
 
-    let onlykey = match OnlyKey::hid_connect() {
-        Ok(Some(ok)) => ok,
-        Ok(None) =>  {
-            eprintln!("No OnlyKey connected. Aborting.");
-            return;
+    let onlykey = match OnlyKey::hid_connect().context("Could not connect to the OnlyKey")? {
+        Some(ok) => ok,
+        None =>  {
+            bail!("No OnlyKey connected");
         },
-        Err(OnlyKeyError::Locked) => {
-            eprintln!("The connected OnlyKey is locked. Aborting.");
-            return;
-        },
-        Err(e) => {
-            eprintln!("Could not connect to the OnlyKey: {:?}", e);
-            return;
-        }
     };
 
     println!("Asking the connected OnlyKey for empty slots...
 Make sure your key is not yet in config mode or else the connection will fail.");
 
-    let mut empty_slots = onlykey.get_empty_key_slots().expect("could not communicate with the OnlyKey");
+    let mut empty_slots = onlykey.get_empty_key_slots().context("Could not get the empty slots")?;
 
     // Hold the key, the sot in which the key will be transfered and a boolean indicating if the key is the primary key
     let mut keys_slots = Vec::new();
@@ -179,14 +153,12 @@ Make sure your key is not yet in config mode or else the connection will fail.")
                         keys_slots.push((selected, slot, selected == 0));
                     }
                     None => {
-                        eprintln!("There is no empty slot for an RSA key. Aborting.");
-                        return;
+                        bail!("There is no empty slot for an RSA key");
                     }
                 }
             },
             sequoia_openpgp::crypto::mpi::PublicKey::DSA { .. } | sequoia_openpgp::crypto::mpi::PublicKey::ElGamal { .. } => {
-                eprintln!("Key type not supported: {}. Aborting.", key_info_str(&key_to_move, selected == 0));
-                return;
+                bail!("Key type not supported: {}", key_info_str(&key_to_move, selected == 0));
             },
             sequoia_openpgp::crypto::mpi::PublicKey::EdDSA { curve, q: _ } | sequoia_openpgp::crypto::mpi::PublicKey::ECDSA { curve, q: _ } | sequoia_openpgp::crypto::mpi::PublicKey::ECDH { curve, q: _, hash: _, sym: _ } => {
                 match curve {
@@ -197,20 +169,17 @@ Make sure your key is not yet in config mode or else the connection will fail.")
                                 keys_slots.push((selected, slot, selected == 0));
                             }
                             None => {
-                                eprintln!("There is no empty slot for an ECC key. Aborting.");
-                                return;
+                                bail!("There is no empty slot for an ECC key");
                             }
                         }
                     },
                     Curve::NistP384 | Curve::NistP521 | Curve::BrainpoolP256 | Curve::BrainpoolP512 | Curve::Unknown(_) => {
-                        eprintln!("Key type not supported: {}. Aborting.", key_info_str(&key_to_move, selected == 0));
-                        return;
+                        bail!("Key type not supported: {}", key_info_str(&key_to_move, selected == 0));
                     },
                 }
             },
             _ => {
-                eprintln!("Unknown key type: {}. Aborting.", key_info_str(&key_to_move, selected == 0));
-                return;
+                bail!("Unknown key type: {}", key_info_str(&key_to_move, selected == 0));
             },
         }
     }
@@ -227,17 +196,17 @@ Press 'Enter' when you're ready to continue.");
     let _: String = read_line!();
 
     let mut password = if keys_slots.iter().any(|(index, _, _)| !key.keys().nth(*index).unwrap().has_unencrypted_secret()) {
-        rpassword::prompt_password("Please enter your key's password: ").expect("could not read password")
+        rpassword::prompt_password("Please enter your key's password: ").unwrap()
     } else {String::new()};
 
     for (index, slot, primary) in &keys_slots {
         let key = key.keys().nth(*index).unwrap();
         let component = key.component();
-        let parts = component.parts_as_secret().expect("could not get secret from key").clone();
+        let parts = component.parts_as_secret().context("Could not get secrets from key")?.clone();
         let decrypted_parts = {
             let mut decrypted = parts.clone().decrypt_secret(&password.clone().into());
             while decrypted.is_err() {
-                println!("Error is: {:?}, part: {:#?}", decrypted, parts);
+                println!("Error is: {:?}", decrypted);
                 password = rpassword::prompt_password("Wrong password. Please re-enter your key's password: ").unwrap();
                 decrypted = parts.clone().decrypt_secret(&password.clone().into());
             }
@@ -246,7 +215,7 @@ Press 'Enter' when you're ready to continue.");
 
         let secret = decrypted_parts.secret();
         if let sequoia_openpgp::packet::prelude::SecretKeyMaterial::Unencrypted(secret) = secret {
-            if let Err(e) = secret.map(|key_material| -> Result<()> {
+            secret.map(|key_material| -> Result<()> {
                 let key_role = {
                     if key.for_storage_encryption() || key.for_transport_encryption() {
                         KeyRole::Encrypt
@@ -269,22 +238,19 @@ Press 'Enter' when you're ready to continue.");
                                     Curve::NistP256 => KeyType::Ecc(ok_gpg_agent::config::EccType::Nist256P1),
                                     Curve::Ed25519 => KeyType::Ecc(ok_gpg_agent::config::EccType::Ed25519),
                                     Curve::Cv25519 => KeyType::Ecc(ok_gpg_agent::config::EccType::Cv25519),
-                                    _ => return Err(anyhow!("Wrong key type")),
+                                    _ => bail!("Wrong key type"),
                                 }
                             },
-                            _ => return Err(anyhow!("Non coherent key type")),
+                            _ => bail!("Non coherent key type"),
                         };
                         onlykey.set_private(*slot, key_type, key_role, &scalar.value_padded(32))?;
                         Ok(())
                     },
                     _ => Err(anyhow!("Wrong key type")),
                 }
-            }) {
-                eprintln!("Could not transfer the private key \"{}\": {:?}", key_info_str(&key, *primary), e);
-                return;
-            } else {
-                println!("Key \"{}\" successfuly transfered to slot {}!", key_info_str(&key, *primary), slot);
-            }
+            }).with_context(|| format!("Could not transfer the private key \"{}\"", key_info_str(&key, *primary)))?;
+
+            println!("Key \"{}\" successfuly transfered to slot {}!", key_info_str(&key, *primary), slot);
         }
     }
 
@@ -292,7 +258,7 @@ Press 'Enter' when you're ready to continue.");
     for (index, slot, primary) in keys_slots {
         println!("Key \"{}\" of ID {} transfered to slot {}", key_info_str(&key.keys().nth(index).unwrap(), primary), key.keys().nth(index).unwrap().fingerprint(), slot);
     }
-
+    Ok(())
 }
 
 /// Display (println) the given key in a similar format as GPG does.

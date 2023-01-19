@@ -4,7 +4,7 @@
 
 use std::{path::PathBuf, thread, sync::{mpsc::{channel, Sender}, Arc, Mutex, RwLock}};
 
-use anyhow::{Result, bail};
+use anyhow::{Result, bail, Context};
 use clap::{Parser};
 use log::{info, debug, error, trace, warn};
 
@@ -45,7 +45,7 @@ struct Args {
 }
 
 fn main() -> Result<()> {
-    setup_logger().expect("Problem with logger");
+    setup_logger().context("Problem with logger")?;
 
     if let Err(e) = Args::try_parse() {
         match e.kind() {
