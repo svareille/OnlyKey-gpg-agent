@@ -186,7 +186,7 @@ fn main() -> Result<()> {
 
     debug!("Waiting for client connection");
     while let Ok(mut client) = assuan_listener.accept() {
-        debug!("GPG attempting connection...");
+        debug!("GPG client attempting connection...");
         if let Err(e) = client.connect() {
             info!("Couldn't connect client: {:?}", e);
             continue;
@@ -206,8 +206,6 @@ fn main() -> Result<()> {
         // Connect to an OnlyKey, silently continue if an error occurs
         if let Err(e) = my_agent.lock().unwrap().try_connect_device() {
             error!("Could not connect to an OnlyKey: {:?}", e);
-            // TODO: Send an error to client and shutdown connection
-            //client.send_err(code, desc)
         }
 
         let agent = Arc::clone(&my_agent);
