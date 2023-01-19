@@ -2,7 +2,7 @@
 //! The underlying `gpg-agent` is started in server mode, thus only accessible by the running
 //! instance of OnlyKey-gpg-agent
 
-use std::{path::PathBuf, thread, sync::{mpsc::{channel, Sender}, Arc, Mutex, RwLock}};
+use std::{path::PathBuf, thread, sync::{mpsc::{channel, Sender, Receiver}, Arc, Mutex, RwLock}};
 
 use anyhow::{Result, bail, Context};
 use clap::{Parser};
@@ -158,8 +158,10 @@ fn main() -> Result<()> {
     {
         info!("Handling server...");
         let server = server.clone();
-        thread::spawn(move || -> Result<()> {
-            handle_server(server, sender)
+        thread::spawn(move || {
+            if let Err(e) = handle_server(server, sender) {
+                error!("Server handling got interrupted: {:?}", e);
+            }
         });
     }
 
@@ -168,60 +170,11 @@ fn main() -> Result<()> {
     {
         info!("Handling messages dispatching to client...");
         let client = Arc::clone(&shared_client);
-        let mut server = server.clone();
-        thread::spawn(move || -> Result<()> {
-            while let Ok(data) = receiver.recv() {
-                if let Some(client) = client.lock().unwrap().as_mut() {
-                    let mut srf = srf.lock().unwrap();
-                    match srf.last() {
-                        Some(ServerResponseFilter::CancelInquire) => {
-                            match data {
-                                AssuanResponse::Inquire{ .. } => {
-                                    debug!("Got Inquire from server, canceling it");
-                                    srf.pop();
-                                    server.send(AssuanCommand::Cancel)?;
-                                    continue;
-                                },
-                                _ => {client.send(data)?;}
-                            }
-                        },
-                        Some(ServerResponseFilter::OkOrErr) => {
-                            match data {
-                                AssuanResponse::Ok(_) | AssuanResponse::Err { .. } => {
-                                    debug!("Got Ok or Err from server, ignoring it");
-                                    srf.pop();
-                                    continue;
-                                },
-                                _ => {client.send(data)?;}
-                            }
-                        },
-                        Some(ServerResponseFilter::Processing) => {
-                            match data {
-                                AssuanResponse::Processing { .. } => {
-                                    debug!("Got Processing from server, ignoring");
-                                    srf.pop();
-                                    continue;
-                                },
-                                _ => {client.send(data)?;}
-                            }
-                        },
-                        Some(ServerResponseFilter::Inquire) => {
-                            match data {
-                                AssuanResponse::Inquire{ .. } => {
-                                    debug!("Got Inquire from server, ignoring");
-                                    srf.pop();
-                                    continue;
-                                },
-                                _ => {client.send(data)?;}
-                            }
-                        },
-                        None => {client.send(data)?;},
-                    }
-                } else {
-                    warn!("No client attached, yet message {:?} received from server", data);
-                }
+        let server = server.clone();
+        thread::spawn(move || {
+            if let Err(e) = dispatch_to_client(receiver, client, server, srf) {
+                error!("Message dispatching to client got interrupted: {:?}", e);
             }
-            Ok(())
         });
     }
 
@@ -446,4 +399,59 @@ fn handle_server(mut server: AssuanServer, client: Sender<AssuanResponse>) -> Re
         debug!("[handle_server] Got {:?}", data);
         client.send(data)?;
     }
+}
+
+fn dispatch_to_client(receiver: Receiver<AssuanResponse>, client: Arc<Mutex<Option<AssuanClient>>>, mut server: AssuanServer, srf: Arc<Mutex<Vec<ServerResponseFilter>>>) -> Result<()> {
+    while let Ok(data) = receiver.recv() {
+        if let Some(client) = client.lock().unwrap().as_mut() {
+            let mut srf = srf.lock().unwrap();
+            match srf.last() {
+                Some(ServerResponseFilter::CancelInquire) => {
+                    match data {
+                        AssuanResponse::Inquire{ .. } => {
+                            debug!("Got Inquire from server, canceling it");
+                            srf.pop();
+                            server.send(AssuanCommand::Cancel)?;
+                            continue;
+                        },
+                        _ => {client.send(data)?;}
+                    }
+                },
+                Some(ServerResponseFilter::OkOrErr) => {
+                    match data {
+                        AssuanResponse::Ok(_) | AssuanResponse::Err { .. } => {
+                            debug!("Got Ok or Err from server, ignoring it");
+                            srf.pop();
+                            continue;
+                        },
+                        _ => {client.send(data)?;}
+                    }
+                },
+                Some(ServerResponseFilter::Processing) => {
+                    match data {
+                        AssuanResponse::Processing { .. } => {
+                            debug!("Got Processing from server, ignoring");
+                            srf.pop();
+                            continue;
+                        },
+                        _ => {client.send(data)?;}
+                    }
+                },
+                Some(ServerResponseFilter::Inquire) => {
+                    match data {
+                        AssuanResponse::Inquire{ .. } => {
+                            debug!("Got Inquire from server, ignoring");
+                            srf.pop();
+                            continue;
+                        },
+                        _ => {client.send(data)?;}
+                    }
+                },
+                None => {client.send(data)?;},
+            }
+        } else {
+            warn!("No client attached, yet message {:?} received from server", data);
+        }
+    }
+    Ok(())
 }
