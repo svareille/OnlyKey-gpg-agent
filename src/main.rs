@@ -101,7 +101,7 @@ fn main() -> Result<()> {
     config_file.push("ok-agent.toml");
 
     if args.daemon {
-        daemonize()?;
+        daemonize().context("Could not daemonize the process")?;
     }
 
     let settings = Settings::new(config_file.as_path()).map_err(|e| {

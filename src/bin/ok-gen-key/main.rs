@@ -404,16 +404,16 @@ fn keygrips_from_gpg(armored_key: &str) -> Result<Vec<String>> {
         .args(["--show-keys", "--with-keygrip", "--with-colons"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .spawn()?;
+        .spawn().context("Could not invoke `gpg`")?;
     
     gpg.stdin
         .as_mut()
         .ok_or_else(||anyhow!("Child process stdin has not been captured!"))?
-        .write_all(armored_key.as_bytes())?;
+        .write_all(armored_key.as_bytes()).context("Could not send the armored key to gpg")?;
     
-    let output = gpg.wait_with_output()?;
+    let output = gpg.wait_with_output().context("Could not grab gpg's output")?;
     if output.status.success() {
-        let raw_output = String::from_utf8(output.stdout)?;
+        let raw_output = String::from_utf8(output.stdout).context("Could not convert gpg's output to UTF-8")?;
         let mut keygrips = Vec::new();
         for line in raw_output.lines() {
             lazy_static! {
@@ -446,12 +446,12 @@ fn gpg_export_key(key: &str, homedir: &Option<PathBuf>) -> Result<()> {
     if let Some(homedir) = homedir {
         gpg.arg("--homedir").arg(homedir.as_os_str().to_str().expect("Cannot convert homedir path to os path"));
     }
-    let mut gpg = gpg.spawn()?;
+    let mut gpg = gpg.spawn().context("Could not invoke `gpg`")?;
     gpg.stdin
         .as_mut()
         .ok_or_else(||anyhow!("Child process stdin has not been captured!"))?
-        .write_all(key.as_bytes())?;
-    let output = gpg.wait()?;
+        .write_all(key.as_bytes()).context("Could not send the armored key to gpg")?;
+    let output = gpg.wait().context("Could not grab gpg's output")?;
 
     if output.success() {
         Ok(())
@@ -465,8 +465,8 @@ fn append_config_to_file(dummy_settings: &DummySettings, filename: &Path) -> Res
     let mut file = OpenOptions::new()
         .create(true)
         .append(true)
-        .open(&filename).map_err(|e| anyhow!("Unable to open file {}: {:?}", filename.display(), e))?;
-    file.write_all(b"\n\n")?;
+        .open(&filename).with_context(|| format!("Could not open file {}", filename.display()))?;
+    file.write_all(b"\n\n").with_context(|| format!("Could not write to file {}", filename.display()))?;
     file.write_all(toml::to_string(&dummy_settings).context("Could not serialize the configuration to TOML")?.as_bytes()).with_context(|| format!("Unable to write settings to file {}", filename.display()))
 }
 
