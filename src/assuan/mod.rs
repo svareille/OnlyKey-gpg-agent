@@ -1,6 +1,7 @@
 use std::{net::Shutdown, path::{PathBuf, Path}, io::{Write, BufWriter, BufReader, BufRead, ErrorKind}};
 use std::{process::{Command, Child, Stdio, ChildStdout, ChildStdin}, sync::{Arc, Mutex}};
 
+use anyhow::Context;
 use log::{info, trace, error, debug};
 use thiserror::Error;
 
@@ -54,6 +55,8 @@ pub enum ServerError {
     InvalidCommand(Vec<u8>),
     #[error(transparent)]
     IOError(#[from] std::io::Error),
+    #[error(transparent)]
+    Other(#[from] anyhow::Error),
 }
 
 #[cfg(windows)]
@@ -65,20 +68,20 @@ pub struct AssuanListener {
 
 #[cfg(windows)]
 impl AssuanListener {
-    pub fn new(homedir: &Path, _delete_socket: bool) -> Result<Self, std::io::Error> {
-        let listener = TcpListener::bind(("127.0.0.1", 0))?;
-        info!("Listening on port {}", listener.local_addr()?.port());
+    pub fn new(homedir: &Path, _delete_socket: bool) -> Result<Self, anyhow::Error> {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).context("Failed to open a listening TCP socket")?;
+        info!("Listening on port {}", listener.local_addr().unwrap().port());
 
-        let agent_socket = get_socket_file_path(homedir)?;
+        let agent_socket = get_socket_file_path(homedir).context("Failed to get the socket file's path")?;
         info!("Socket file is {:?}", agent_socket);
 
         let mut nonce = [0u8; 16];
         let mut rng = thread_rng();
-        nonce.try_fill(&mut rng)?;
+        nonce.try_fill(&mut rng).context("Failed to initialize the nonce")?;
 
-        let mut file = File::create(&agent_socket)?;
-        file.write_all(format!("{}\n", listener.local_addr()?.port()).as_bytes())?;
-        file.write_all(&nonce)?;
+        let mut file = File::create(&agent_socket).context("Failed to create the socket file")?;
+        file.write_all(format!("{}\n", listener.local_addr().unwrap().port()).as_bytes()).context("Failed to write data to socket file")?;
+        file.write_all(&nonce).context("Failed to write data to socket file")?;
 
         Ok(AssuanListener { tcp_listener: listener, _socket_file: agent_socket, nonce})
     }
@@ -98,8 +101,8 @@ pub struct AssuanListener {
 
 #[cfg(unix)]
 impl AssuanListener {
-    pub fn new(homedir: &Path, delete_socket: bool) -> Result<Self, std::io::Error> {
-        let mut agent_socket = get_socket_file_path(homedir)?;
+    pub fn new(homedir: &Path, delete_socket: bool) -> Result<Self, anyhow::Error> {
+        let mut agent_socket = get_socket_file_path(homedir).context("Failed to get the socket file's path")?;
         info!("Socket file is {:?}", agent_socket);
 
         if let Ok(meta_socket) = fs::metadata(&agent_socket) {
@@ -117,10 +120,11 @@ impl AssuanListener {
                     ).unwrap();
                     if let Some(cap) = re.captures(&content) {
                         let mut socket_path = cap[1].to_owned();
+                        // Replacing environment variables
                         let re = Regex::new(r#"(\$\{([^}]*)})"#).unwrap();
                         for cap in re.captures_iter(&cap[1]) {
                             let to_replace = &cap[1];
-                            let var = std::env::var(&cap[2]).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?;
+                            let var = std::env::var(&cap[2]).with_context(|| format!("Failed to read env var '{}'", &cap[2]))?;
                             socket_path = socket_path.replace(to_replace, &var);
                         }
                         agent_socket = PathBuf::from(&socket_path);
@@ -132,16 +136,16 @@ impl AssuanListener {
         
 
         if delete_socket {
-            match fs::remove_file(&agent_socket) {
+            match std::fs::remove_file(&agent_socket) {
                 Ok(()) => {},
                 Err(e) => match e.kind() {
                     std::io::ErrorKind::NotFound => {},
-                    _ => return Err(e),
+                    _ => return Err(e).context("Failed to remove socket file"),
                 },
             }
         }
 
-        let listener = UnixListener::bind(&agent_socket)?;
+        let listener = UnixListener::bind(&agent_socket).context("Failed to open the Unix socket")?;
 
         debug!("Unix socket bound");
 
@@ -494,7 +498,7 @@ impl AssuanServer {
         // Communication will be done via standard input/output.
         let orig_agent = match agent_path {
             Some(path) => path.to_owned(),
-            None => get_original_agent(homedir)?,
+            None => get_original_agent(homedir).context("Failed to get the original agent")?,
         };
 
         let mut command = Command::new(orig_agent);
@@ -768,11 +772,11 @@ pub fn decode_percent(data: &[u8]) -> Vec<u8> {
 /// 
 /// # Panic
 /// Panic if the path is not UTF8-encoded.
-fn get_socket_file_path(homedir: &Path) -> Result<PathBuf, std::io::Error> {
+fn get_socket_file_path(homedir: &Path) -> Result<PathBuf, anyhow::Error> {
     let output = Command::new("gpgconf")
         .args(["--homedir", homedir.as_os_str().to_str().expect("Cannot convert homedir path to os path")])
         .args(["--list-dirs", "agent-socket"])
-        .output()?;
+        .output().context("Call to gpgconf failed")?;
     let path = PathBuf::from(String::from_utf8(output.stdout).expect("Socket path is not UTF8").trim());
     Ok(path)
 }
@@ -784,7 +788,7 @@ fn get_socket_file_path(homedir: &Path) -> Result<PathBuf, std::io::Error> {
 /// 
 /// # Panic
 /// Panic if the path is not UTF8-encoded.
-fn get_original_agent(homedir: &Path) -> Result<PathBuf, std::io::Error> {
+fn get_original_agent(homedir: &Path) -> Result<PathBuf, anyhow::Error> {
     let mut gpgconf = PathBuf::from("gpgconf");
     if cfg!(target_os = "windows") {
         gpgconf.set_extension("exe");
@@ -792,7 +796,7 @@ fn get_original_agent(homedir: &Path) -> Result<PathBuf, std::io::Error> {
     let output = Command::new(&gpgconf)
         .args(["--homedir", homedir.as_os_str().to_str().expect("Cannot convert homedir path to os path")])
         .args(["--list-dirs", "bindir"])
-        .output()?;
+        .output().context("Call to gpgconf failed")?;
 
     let mut path = PathBuf::from(String::from_utf8(output.stdout).expect("Agent path is not UTF8").trim());
     path.push("gpg-agent");
