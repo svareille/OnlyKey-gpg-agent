@@ -59,34 +59,35 @@ pub(crate) fn gen_key(identity: String, key_kind: EccKind, creation: DateTime<Ut
     let user_id = UserID::from(identity.clone());
     let uid_sig_builder = SignatureBuilder::new(SignatureType::PositiveCertification)
         .set_hash_algo(HashAlgorithm::SHA512)
-        .set_signature_creation_time(creation)?
-        .set_key_validity_period(validity.to_std().unwrap())?
-        .set_key_flags(KeyFlags::empty().set_certification().set_signing())?
-        .set_preferred_symmetric_algorithms(vec![
+        .set_signature_creation_time(creation)
+        .and_then(|b|b.set_key_validity_period(validity.to_std().unwrap()))
+        .and_then(|b|b.set_key_flags(KeyFlags::empty().set_certification().set_signing()))
+        .and_then(|b|b.set_preferred_symmetric_algorithms(vec![
             SymmetricAlgorithm::AES256,
             SymmetricAlgorithm::AES192,
             SymmetricAlgorithm::AES128,
             SymmetricAlgorithm::TripleDES,
-        ])?
-        .set_preferred_hash_algorithms(vec![
+        ]))
+        .and_then(|b|b.set_preferred_hash_algorithms(vec![
             HashAlgorithm::SHA512,
             HashAlgorithm::SHA384,
             HashAlgorithm::SHA256,
             HashAlgorithm::SHA224,
             HashAlgorithm::SHA1,
-        ])?
-        .set_preferred_compression_algorithms(vec![
+        ]))
+        .and_then(|b|b.set_preferred_compression_algorithms(vec![
             CompressionAlgorithm::Zlib,
             CompressionAlgorithm::BZip2,
             CompressionAlgorithm::Zip,
-        ])?
-        .set_issuer_fingerprint(primary_key.fingerprint())?
-        .set_features(Features::empty().set_aead().set_mdc())?;
+        ]))
+        .and_then(|b|b.set_issuer_fingerprint(primary_key.fingerprint()))
+        .and_then(|b|b.set_features(Features::empty().set_aead().set_mdc()))
+        .context("Failed to create User ID's signature Builder")?;
 
-    let uid_signature = uid_sig_builder.sign_userid_binding(&mut ok_signer, None, &user_id)?;
+    let uid_signature = uid_sig_builder.sign_userid_binding(&mut ok_signer, None, &user_id).context("Failed to create the User ID's signature")?;
 
-    public_key = public_key.insert_packets(user_id)?;
-    public_key = public_key.insert_packets(uid_signature)?;
+    public_key = public_key.insert_packets(user_id).context("Failed to add the User ID to the cert")?;
+    public_key = public_key.insert_packets(uid_signature).context("Failed to add the User ID's signature to the cert")?;
 
 
     let subkey: Key<PublicParts, SubordinateRole> = Key::from(Key4::new(
@@ -99,17 +100,18 @@ pub(crate) fn gen_key(identity: String, key_kind: EccKind, creation: DateTime<Ut
         }).context("Failed to generate subordinate key")?);
 
     let subkey_sig_builder = SignatureBuilder::new(SignatureType::SubkeyBinding)
-        .set_signature_creation_time(creation)?
-        .set_key_validity_period(validity.to_std().unwrap())?
-        .set_key_flags(KeyFlags::empty().set_storage_encryption().set_transport_encryption())?
-        .set_issuer_fingerprint(primary_key.fingerprint())?;
+        .set_signature_creation_time(creation)
+        .and_then(|b|b.set_key_validity_period(validity.to_std().unwrap()))
+        .and_then(|b|b.set_key_flags(KeyFlags::empty().set_storage_encryption().set_transport_encryption()))
+        .and_then(|b|b.set_issuer_fingerprint(primary_key.fingerprint()))
+        .context("Failed to create the subkey's signature Builder")?;
     
-    let subkey_signature = subkey_sig_builder.sign_subkey_binding(&mut ok_signer, None, &subkey)?;
+    let subkey_signature = subkey_sig_builder.sign_subkey_binding(&mut ok_signer, None, &subkey).context("Failed to create the subkey's signature")?;
 
-    public_key = public_key.insert_packets(subkey)?;
-    public_key = public_key.insert_packets(subkey_signature)?;
+    public_key = public_key.insert_packets(subkey).context("Failed to add the subkey to the cert")?;
+    public_key = public_key.insert_packets(subkey_signature).context("Failed to add the subkey's signature to the cert")?;
     
-    let armored = String::from_utf8(public_key.armored().to_vec()?)?;
+    let armored = String::from_utf8(public_key.armored().to_vec().unwrap()).context("Failed to armor the cert")?;
     Ok(armored)
 }
 
