@@ -25,7 +25,7 @@ jobs:
       #    make-default: false
       - name: Install libusb
         if: matrix.os == 'ubuntu-latest'
-        run: sudo apt install libusb-1.0-0-dev libusb-1.0-0
+        run: sudo apt install libusb-1.0-0-dev libusb-1.0-0 libudev1 libudev-dev
       - uses: actions/cache@v3
         with:
           path: |
