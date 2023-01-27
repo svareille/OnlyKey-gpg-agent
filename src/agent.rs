@@ -247,7 +247,7 @@ pub fn handle_client(mut client: AssuanClient, mut server: AssuanServer, my_agen
                                 warn!("Client canceled the decryption operation.");
                             }
                             Err(ClientError::UnexpectedCommand(cmd)) => {
-                                warn!("Got unexepected command {:?} while processing decryption data", cmd);
+                                warn!("Got unexpected command {:?} while processing decryption data", cmd);
                             }
                             Err(e) => {
                                 bail!(e);
@@ -387,7 +387,7 @@ impl MyAgent {
         Ok(())
     }
 
-    /// Logically disconnect the connected OnlyKey if relevent.
+    /// Logically disconnect the connected OnlyKey if relevant.
     /// 
     /// After a call to this function, any program should be able to claim a handle on the connected
     /// OnlyKey.
@@ -399,7 +399,7 @@ impl MyAgent {
         }
     }
 
-    /// Check if the agent is ready to handle operations requiering the OnlyKey
+    /// Check if the agent is ready to handle operations requiring the OnlyKey
     pub fn check_ready(&mut self) -> bool {
         debug!("Checking if agent is ready to handle things");
 

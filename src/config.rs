@@ -45,7 +45,7 @@ pub enum KeyType {
 #[derive(Debug, Deserialize, Serialize)]
 #[derive(Clone, PartialEq)]
 pub enum EccType {
-    Unkwnow,
+    Unknown,
     Ed25519,
     Cv25519,
     Nist256P1,
@@ -72,7 +72,7 @@ impl KeySlot {
             KeySlot::ECC1  | KeySlot::ECC2  | KeySlot::ECC3  | KeySlot::ECC4  |
             KeySlot::ECC5  | KeySlot::ECC6  | KeySlot::ECC7  | KeySlot::ECC8  |
             KeySlot::ECC9  | KeySlot::ECC10 | KeySlot::ECC11 | KeySlot::ECC12 |
-            KeySlot::ECC13 | KeySlot::ECC14 | KeySlot::ECC15 | KeySlot::ECC16 => KeyType::Ecc(EccType::Unkwnow),
+            KeySlot::ECC13 | KeySlot::ECC14 | KeySlot::ECC15 | KeySlot::ECC16 => KeyType::Ecc(EccType::Unknown),
         }
     }
 }
@@ -135,7 +135,7 @@ impl StoredKeyInfo {
             KeySlot::ECC1  | KeySlot::ECC2  | KeySlot::ECC3  | KeySlot::ECC4  |
             KeySlot::ECC5  | KeySlot::ECC6  | KeySlot::ECC7  | KeySlot::ECC8  |
             KeySlot::ECC9  | KeySlot::ECC10 | KeySlot::ECC11 | KeySlot::ECC12 |
-            KeySlot::ECC13 | KeySlot::ECC14 | KeySlot::ECC15 | KeySlot::ECC16 => KeyType::Ecc(EccType::Unkwnow),
+            KeySlot::ECC13 | KeySlot::ECC14 | KeySlot::ECC15 | KeySlot::ECC16 => KeyType::Ecc(EccType::Unknown),
         }
     }
 }
@@ -154,7 +154,7 @@ pub struct DerivedKeyInfo {
 impl DerivedKeyInfo {
     pub fn slot_nb(&self) -> u8 {
         match self.ecc_type {
-            EccType::Unkwnow => 132,
+            EccType::Unknown => 132,
             EccType::Ed25519 => 201,
             EccType::Nist256P1 => 202,
             EccType::Secp256K1 => 203,
@@ -168,7 +168,7 @@ impl DerivedKeyInfo {
 
     pub fn algo_nb(&self) -> u8 {
         match self.ecc_type {
-            EccType::Unkwnow => 0,
+            EccType::Unknown => 0,
             EccType::Ed25519 => 1,
             EccType::Nist256P1 => 2,
             EccType::Secp256K1 => 3,

@@ -234,7 +234,7 @@ impl AssuanClient {
     /// Connect the client.
     /// 
     /// # Errors
-    /// Return [`ClientError::IOError`] if the read operation is unseccessful or 
+    /// Return [`ClientError::IOError`] if the read operation is unsuccessful or 
     /// a [`ClientError::WrongNonce`] if the provided nonce doesn't match.
     pub fn connect(&mut self) -> Result<(), ClientError> {
         self.validate()?;
@@ -304,7 +304,7 @@ impl AssuanClient {
         let (command, parameters) = buf.split_at(command_end);
 
         let command = String::from_utf8(command.to_vec()).map_err(|_| ClientError::InvalidCommand(buf.clone()))?;
-        // Remove space character at begining
+        // Remove space character at beginning
         let parameters = if parameters.is_empty() {parameters} else {&parameters[1..]}; 
 
         match command.as_str() {
@@ -580,7 +580,7 @@ impl AssuanServer {
         let (command, parameters) = buf.split_at(command_end);
 
         let command = String::from_utf8(command.to_vec()).map_err(|_| ServerError::InvalidCommand(buf.clone()))?;
-        // Remove space character at begining
+        // Remove space character at beginning
         let parameters = if parameters.is_empty() {parameters} else {&parameters[1..]}; 
 
         match command.as_str() {
@@ -722,7 +722,7 @@ impl Clone for AssuanServer {
 
 /// Validate a line against the max length of an assuan message.
 /// 
-/// Silently truncate the line if it exeeds the maximum length.
+/// Silently truncate the line if it exceeds the maximum length.
 fn validate_line(mut line: Vec<u8>) -> Vec<u8> {
     let mut end = line.iter().position(|b| *b == b'\n').unwrap_or(line.len());
     end = end.min(LINE_LENGHT - 1);

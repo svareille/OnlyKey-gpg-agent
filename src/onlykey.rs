@@ -39,7 +39,7 @@ pub enum KeyRole {
 pub enum OnlyKeyError {
     #[error("Bytes are not UTF-8")]
     NotUtf8,
-    #[error("Unkwnow slot name {0}")]
+    #[error("Unknown slot name {0}")]
     UnkwnownSlotName(String),
     #[error("Wrong ECC slot")]
     WrongEccSlot,
@@ -71,7 +71,7 @@ pub enum OnlyKeyError {
     WrongChallenge,
     #[error("Public key generation failed: {0}")]
     PublicKeyGenerationFailed(String),
-    #[error("Timeout occured while waiting for user input")]
+    #[error("Timeout occurred while waiting for user input")]
     Timeout,
     #[error(transparent)]
     IOError(#[from] std::io::Error),
@@ -189,7 +189,7 @@ impl OnlyKey {
         trace!("Setting time for device");
         let time = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
-            .expect("System time before UNIX EPOCH! Something definetly went wrong!")
+            .expect("System time before UNIX EPOCH! Something definitely went wrong!")
             .as_secs();
 
         let time_str = format!("{:x}", time);
@@ -535,7 +535,7 @@ impl OnlyKey {
             },
             KeyType::Ecc(ecc_type) => {
                 match ecc_type {
-                    EccType::Unkwnow => return Err(OnlyKeyError::InvalidEccType),
+                    EccType::Unknown => return Err(OnlyKeyError::InvalidEccType),
                     EccType::Ed25519 | EccType::Cv25519 => 1,
                     EccType::Nist256P1 => 2,
                     EccType::Secp256K1 => 3,

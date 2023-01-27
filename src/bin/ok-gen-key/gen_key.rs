@@ -142,7 +142,7 @@ impl Signer for OnlyKeySigner {
         match self.key_info.r#type() {
             ok_gpg_agent::config::KeyType::Rsa(_) => unreachable!(),
             ok_gpg_agent::config::KeyType::Ecc(ecc) => match ecc {
-                EccType::Unkwnow => unreachable!(),
+                EccType::Unknown => unreachable!(),
                 EccType::Ed25519 => Ok(sequoia_openpgp::crypto::mpi::Signature::EdDSA { r: MPI::new(&signature[0..32]), s: MPI::new(&signature[32..64]) }),
                 EccType::Cv25519 => unreachable!(),
                 EccType::Nist256P1 => Ok(sequoia_openpgp::crypto::mpi::Signature::ECDSA { r: MPI::new(&signature[0..32]), s: MPI::new(&signature[32..64]) }),

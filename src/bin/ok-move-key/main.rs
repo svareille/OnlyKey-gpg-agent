@@ -140,7 +140,7 @@ Make sure your key is not yet in config mode or else the connection will fail.")
 
     let mut empty_slots = onlykey.get_empty_key_slots().context("Could not get the empty slots")?;
 
-    // Hold the key, the sot in which the key will be transfered and a boolean indicating if the key is the primary key
+    // Hold the key, the sot in which the key will be transferred and a boolean indicating if the key is the primary key
     let mut keys_slots = Vec::new();
 
     for &selected in &selected_keys {
@@ -186,7 +186,7 @@ Make sure your key is not yet in config mode or else the connection will fail.")
 
     // We have a slot for each key, proceed with secret extraction and writing
 
-    println!("The selected keys will be transfered as follow:");
+    println!("The selected keys will be transferred as follow:");
     for (index, slot, primary) in &keys_slots {
         println!("Key \"{}\" => slot {}", key_info_str(&key.keys().nth(*index).unwrap(), *primary), slot);
     }
@@ -250,13 +250,13 @@ Press 'Enter' when you're ready to continue.");
                 }
             }).with_context(|| format!("Could not transfer the private key \"{}\"", key_info_str(&key, *primary)))?;
 
-            println!("Key \"{}\" successfuly transfered to slot {}!", key_info_str(&key, *primary), slot);
+            println!("Key \"{}\" successfully transferred to slot {}!", key_info_str(&key, *primary), slot);
         }
     }
 
-    println!("All keys sucessfuly transfered.");
+    println!("All keys successfully transferred.");
     for (index, slot, primary) in keys_slots {
-        println!("Key \"{}\" of ID {} transfered to slot {}", key_info_str(&key.keys().nth(index).unwrap(), primary), key.keys().nth(index).unwrap().fingerprint(), slot);
+        println!("Key \"{}\" of ID {} transferred to slot {}", key_info_str(&key.keys().nth(index).unwrap(), primary), key.keys().nth(index).unwrap().fingerprint(), slot);
     }
     Ok(())
 }
