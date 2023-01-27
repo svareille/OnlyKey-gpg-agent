@@ -56,7 +56,7 @@ pub(crate) fn gen_key(identity: String, key_kind: EccKind, creation: DateTime<Ut
 
     let mut public_key = Cert::try_from(Packet::PublicKey(primary_key.clone())).context("Failed to generate certificate from primary key")?;
 
-    let user_id = UserID::from(identity.clone());
+    let user_id = UserID::from(identity);
     let uid_sig_builder = SignatureBuilder::new(SignatureType::PositiveCertification)
         .set_hash_algo(HashAlgorithm::SHA512)
         .set_signature_creation_time(creation)
@@ -135,7 +135,7 @@ impl Signer for OnlyKeySigner {
     fn sign(&mut self, hash_algo: HashAlgorithm, digest: &[u8])
             -> sequoia_openpgp::Result<sequoia_openpgp::crypto::mpi::Signature> {
         println!("Signature hash algo: {:?}", hash_algo);
-        let (b1, b2, b3) = OnlyKey::compute_challenge(&OnlyKey::data_to_send(&digest, &self.key_info));
+        let (b1, b2, b3) = OnlyKey::compute_challenge(&OnlyKey::data_to_send(digest, &self.key_info));
         println!("Touch your OnlyKey or enter the following 3 digit challenge code to authorize signing:\n{} {} {}", b1, b2, b3);
 
         let signature = self.onlykey.sign(digest, &self.key_info)?;

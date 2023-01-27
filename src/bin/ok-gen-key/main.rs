@@ -465,7 +465,7 @@ fn append_config_to_file(dummy_settings: &DummySettings, filename: &Path) -> Res
     let mut file = OpenOptions::new()
         .create(true)
         .append(true)
-        .open(&filename).with_context(|| format!("Could not open file {}", filename.display()))?;
+        .open(filename).with_context(|| format!("Could not open file {}", filename.display()))?;
     file.write_all(b"\n\n").with_context(|| format!("Could not write to file {}", filename.display()))?;
     file.write_all(toml::to_string(&dummy_settings).context("Could not serialize the configuration to TOML")?.as_bytes()).with_context(|| format!("Unable to write settings to file {}", filename.display()))
 }

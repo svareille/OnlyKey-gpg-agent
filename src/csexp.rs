@@ -26,8 +26,8 @@ impl Sexp {
             let mut split = s.splitn(2, |&e| e == b':');
             match split.next() {
                 Some(item) => (
-                    std::str::from_utf8(item).ok().and_then(|item| item.parse::<usize>().ok() ).ok_or(SexpError::InvalidFormat("Atom's first part is not a number".to_owned()))?,
-                    split.next().ok_or(SexpError::InvalidFormat("Atom's second part is empty".to_owned()))?),
+                    std::str::from_utf8(item).ok().and_then(|item| item.parse::<usize>().ok() ).ok_or_else(||SexpError::InvalidFormat("Atom's first part is not a number".to_owned()))?,
+                    split.next().ok_or_else(||SexpError::InvalidFormat("Atom's second part is empty".to_owned()))?),
                 None => return Err(SexpError::InvalidFormat("Input is empty".to_owned())),
             }
             

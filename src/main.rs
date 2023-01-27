@@ -67,7 +67,7 @@ fn main() -> Result<()> {
                 }
             },
         };
-        let mut config_file = homedir.clone();
+        let mut config_file = homedir;
         config_file.push("ok-agent.toml");
         println!("Checking configuration from {}...", config_file.display());
         match Settings::new(config_file.as_path()) {
