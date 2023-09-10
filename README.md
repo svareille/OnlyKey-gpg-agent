@@ -21,8 +21,9 @@ Works with:
   
 
 This project provides 3 binaries:
-- The `ok-gpg-agent` which act as a proxy in front of gpg-agent for signing and decryption.
-- The `ok-gen-key` which generate a public key 
+- `ok-gpg-agent` which act as a proxy in front of gpg-agent for signing and decryption.
+- `ok-gen-key` which generate a public key.
+- `ok-move-key` which move private keys from file to free slots.
 
 ## Agent's usage
 
@@ -33,7 +34,7 @@ OnlyKey of course).
 If the `challenge` option of `ok-agent.toml` is `"true"` or not given you will be invited to enter
 a 3-digits challenge on your OnlyKey on signing and decryption. If your OnlyKey is configured to ask
 for a challenge on PGP and SSH operations ("Stored Key User Input Mode" in the OnlyKey App) you will
-have to enter the previously shown code on the OnlyKey, otherwise simply touch a button to allow
+have to enter the previously shown code on the OnlyKey. Otherwise simply touch a button to allow
 the operation.
 
 ## Differences with [`onlykey-agent`](https://docs.onlykey.io/onlykey-agent.html)
@@ -89,13 +90,13 @@ $ gpg-connect-agent KILLAGENT /bye
 
 ### Debian with systemd
 
-Place the extracted binaries in a convenient place, preferably reachable by your `PATH`. `/usr/bin/` is a good choice.
+Place the extracted binaries in a convenient place, preferably reachable by your `PATH`. `/usr/local/bin/` is a good choice.
 
 On some Linux (Debian and derivatives) the gpg-agent is automatically started by systemd.
 The service file is `gpg-agent.service`, located in `/usr/lib/systemd/user/`.
 
 Make a backup of `/usr/lib/systemd/user/gpg-agent.service` and replace the line `ExecStart=/usr/bin/gpg-agent --supervised -v`
-by `ExecStart=/usr/bin/ok-gpg-agent` in the original service file.
+by `ExecStart=/usr/local/bin/ok-gpg-agent` in the original service file.
 
 ```shell
 sudo cp /usr/lib/systemd/user/gpg-agent.service /usr/lib/systemd/user/gpg-agent.service.bak
