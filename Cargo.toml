@@ -14,17 +14,17 @@ keywords = ["gpg", "pgp", "onlykey"]
 
 [dependencies]
 anyhow ="1.0.68"
-base64 = "0.21.0"
+base64 = "0.22.1"
 chrono = "0.4.23"
 clap = { version = "4.1", features = ["derive"] }
-config = "0.13.3"
+config = "0.14.0"
 crc24 = "0.1.6"
 hex = "0.4.3"
 hidapi = "2.1.1"
 lazy_static = "1.4.0"
 log = "0.4.17"
 num = "0.4.0"
-num-derive = "0.3.3"
+num-derive = "0.4.2"
 num-traits = "0.2.15"
 rand = "0.8.5"
 regex = "1.7.1"
@@ -33,9 +33,9 @@ sequoia-openpgp = { version = "1.13", default-features = false, features = ["cry
 serde = { version = "1.0", features = ["derive"] }
 sha1 = "0.10.5"
 sha2 = "0.10.6"
-strum = { version = "0.24", features = ["derive"] }
+strum = { version = "0.26.3", features = ["derive"] }
 text_io = "0.1.12"
-toml = "0.7.0"
+toml = "0.8.15"
 thiserror = "1.0.38"
 
 [target."cfg(windows)".dependencies]
@@ -44,7 +44,7 @@ fern = "0.6.1"
 [target."cfg(not(windows))".dependencies]
 fern = { version = "0.6.1", features = ["syslog-6"] }
 syslog = "6"
-daemonize = "0.4.1"
+daemonize = "0.5.0"
 
 [profile.release]
 opt-level = "s"
