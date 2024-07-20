@@ -13,7 +13,7 @@ use sequoia_openpgp::crypto::mpi::SecretKeyMaterial;
 use sequoia_openpgp::packet::Key;
 use sequoia_openpgp::parse::Parse;
 use sequoia_openpgp::policy::StandardPolicy;
-use sequoia_openpgp::types::{Curve};
+use sequoia_openpgp::types::Curve;
 
 use text_io::read;
 

@@ -1,7 +1,7 @@
 use std::net::Shutdown;
 
 #[cfg(windows)]
-use std::net::{TcpStream};
+use std::net::TcpStream;
 
 #[cfg(unix)]
 use std::os::unix::net::UnixStream;

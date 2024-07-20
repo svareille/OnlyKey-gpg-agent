@@ -2,7 +2,7 @@ use anyhow::{Result, bail, Context};
 use chrono::{Utc, DateTime, Duration};
 use ok_gpg_agent::{config::{DerivedKeyInfo, EccType, KeyInfo}, onlykey::OnlyKey};
 use sequoia_openpgp::{Cert, packet::{UserID, Key, prelude::Key4, key::{PublicParts, PrimaryRole, SubordinateRole}, signature::SignatureBuilder}, Packet, crypto::{mpi::{PublicKey, MPI}, Signer}, types::{Curve, SignatureType, SymmetricAlgorithm, PublicKeyAlgorithm, HashAlgorithm, KeyFlags, CompressionAlgorithm, Features}, serialize::SerializeInto};
-use crate::{EccKind};
+use crate::EccKind;
 
 pub(crate) fn gen_key(identity: String, key_kind: EccKind, creation: DateTime<Utc>, validity: Duration) -> Result<String> {
 

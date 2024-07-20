@@ -11,14 +11,14 @@ use stream::Stream;
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
 #[cfg(windows)]
-use std::net::{TcpListener};
+use std::net::TcpListener;
 #[cfg(windows)]
 use rand::{thread_rng, Fill};
 #[cfg(windows)]
 use std::fs::File;
 
 #[cfg(unix)]
-use std::os::unix::{net::{UnixListener}, prelude::FileTypeExt};
+use std::os::unix::{net::UnixListener, prelude::FileTypeExt};
 #[cfg(unix)]
 use std::fs;
 #[cfg(unix)]

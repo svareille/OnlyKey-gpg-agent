@@ -1,6 +1,6 @@
-use std::{path::{Path, PathBuf}};
+use std::path::{Path, PathBuf};
 
-use anyhow::{Result};
+use anyhow::Result;
 use config::{ConfigError, Config, File};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 

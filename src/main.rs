@@ -5,7 +5,7 @@
 use std::{path::PathBuf, thread, sync::{mpsc::{channel, Sender, Receiver}, Arc, Mutex, RwLock}};
 
 use anyhow::{Result, bail, Context};
-use clap::{Parser};
+use clap::Parser;
 use log::{info, debug, error, trace, warn};
 
 #[cfg(not(windows))]

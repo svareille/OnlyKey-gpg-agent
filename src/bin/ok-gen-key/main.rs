@@ -494,7 +494,7 @@ macro_rules! read_line {
 mod tests {
     use chrono::Duration;
 
-    use crate::{parse_validity_duration};
+    use crate::parse_validity_duration;
 
     #[test]
     fn validity_good() {
