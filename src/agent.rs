@@ -598,11 +598,11 @@ pub fn parse_ecdh(s: &[u8]) -> Result<Vec<u8>, ()> {
         Ok(exp) => {
             debug!("Sexp parsed successfully: {:?}", exp);
             if let Sexp::List(exps) = exp {
-                if exps.get( 0) == Some(&Sexp::Atom(b"enc-val".to_vec())) {
+                if exps.first() == Some(&Sexp::Atom(b"enc-val".to_vec())) {
                     if let Some(Sexp::List(exps)) = exps.get(1) {
-                        if exps.get(0) == Some(&Sexp::Atom(b"ecdh".to_vec())) {
+                        if exps.first() == Some(&Sexp::Atom(b"ecdh".to_vec())) {
                             if let Some(Sexp::List(e)) = exps.get(2) {
-                                if e.get(0) == Some(&Sexp::Atom(b"e".to_vec())) {
+                                if e.first() == Some(&Sexp::Atom(b"e".to_vec())) {
                                     if let Some(Sexp::Atom(e)) = e.get(1) {
                                         return Ok(e.to_vec());
                                     }
@@ -628,11 +628,11 @@ pub fn parse_rsa(s: &[u8]) -> Result<Vec<u8>, ()> {
         Ok(exp) => {
             debug!("Sexp parsed successfully: {:?}", exp);
             if let Sexp::List(exps) = exp {
-                if exps.get( 0) == Some(&Sexp::Atom(b"enc-val".to_vec())) {
+                if exps.first() == Some(&Sexp::Atom(b"enc-val".to_vec())) {
                     if let Some(Sexp::List(exps)) = exps.get(1) {
-                        if exps.get(0) == Some(&Sexp::Atom(b"rsa".to_vec())) {
+                        if exps.first() == Some(&Sexp::Atom(b"rsa".to_vec())) {
                             if let Some(Sexp::List(a)) = exps.get(1) {
-                                if a.get(0) == Some(&Sexp::Atom(b"a".to_vec())) {
+                                if a.first() == Some(&Sexp::Atom(b"a".to_vec())) {
                                     if let Some(Sexp::Atom(a)) = a.get(1) {
                                         return Ok(a.to_vec());
                                     }
