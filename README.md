@@ -1,19 +1,19 @@
 # OnlyKey GPG agent
 
-This ok-gpg-agent is a proxy between a gpg client and the original gpg-agent.
-It checks wether an OnlyKey is plugged and use it for signing/decryption if relevant.
+This ok-gpg-agent is a proxy between a GPG client and the original gpg-agent.
+It checks whether an OnlyKey is plugged and use it for signing/decryption if relevant.
 
 My typical use case is when I sign commits. I want my private key on my computer and on my OnlyKey
 for convenience, so that when I sign a commit I just have to touch my OnlyKey if plugged or entering my
-passphrase as usual if not. **Note:** the private keys does not need to be present
+passphrase as usual if not. **Note:** the private key does not need to be present
 on both the OnlyKey and the computer. You can have your private keys solely on your OnlyKey, or
 solely on your computer.
 
 This agent **does not** replace the original gpg-agent. It works as a proxy between a client
-(usually gpg) and gpg-agent.
+(usually `gpg`) and `gpg-agent`.
 
 Works with:
-- `gpg` (and anything using gpg, like `git`)
+- `gpg` (and anything using `gpg`, like `git`)
 - GpgOL
 - Kleopatra
 - Mailvelope
@@ -21,20 +21,19 @@ Works with:
   
 
 This project provides 3 binaries:
-- `ok-gpg-agent` which act as a proxy in front of gpg-agent for signing and decryption.
-- `ok-gen-key` which generate a public key.
-- `ok-move-key` which move private keys from file to free slots.
+- `ok-gpg-agent`, which acts as a proxy in front of `gpg-agent` for signing and decryption.
+- `ok-gen-key`, which generates a public key.
+- `ok-move-key`, which moves private keys from file to free slots.
 
 ## Agent's usage
 
-Just use `gpg` or any gpg client as usual and if your OnlyKey is plugged and correctly configured,
-signing and decryption will be done by your key (if the corresponding private key is loaded in your
-OnlyKey of course).
+Just use `gpg` or any gpg client as usual. If your OnlyKey is plugged in and correctly configured,
+signing and decryption will be done by your OnlyKey.
 
-If the `challenge` option of `ok-agent.toml` is `"true"` or not given you will be invited to enter
+If the `challenge` option of `ok-agent.toml` is `"true"` or not given, you will be invited to enter
 a 3-digits challenge on your OnlyKey on signing and decryption. If your OnlyKey is configured to ask
 for a challenge on PGP and SSH operations ("Stored Key User Input Mode" in the OnlyKey App) you will
-have to enter the previously shown code on the OnlyKey. Otherwise simply touch a button to allow
+have to enter the previously shown code on the OnlyKey. Otherwise, simply touch a button to allow
 the operation.
 
 ## Differences with [`onlykey-agent`](https://docs.onlykey.io/onlykey-agent.html)
@@ -49,8 +48,8 @@ the official GPG agent for OnlyKey.
 | Official `onlykey-gpg` | OnlyKey GPG Agent |
 | -- | -- |
 | Works on Linux and Mac (Windows soon?). | Works on Windows, Linux and Mac (not tested but compilation is successful, so should be fine). |
-| Separate standard computer-hosted keys and onlykey-hosted keys, so that both cannot be used at the same time. | Interact with the original gpg-agent so that both computer-hosted and onlykey-hosted keys can be used at the same time. |
-| Need to unset `GNUPGHOME` to use computer-hosted keys. | Don't need to do anything to switch between computer-hosted and onlykey-hosted keys. |
+| Distinguish standard computer-hosted keys and OnlyKey-hosted keys, so that both cannot be used at the same time. | Interact with the original gpg-agent so that both computer-hosted and OnlyKey-hosted keys can be used at the same time. |
+| Need to unset `GNUPGHOME` to use computer-hosted keys. | Don't need to do anything to switch between computer-hosted and OnlyKey-hosted keys. |
 | Can use a single key pair per configuration | Can use an infinite number of keys  |
 
 I initially began this project in order to have a way to use my PGP keys from my OnlyKey on Windows,
@@ -63,7 +62,7 @@ something in Rust.
 
 - Signing with an RSA key of 4096 bits may not work. See https://github.com/trustcrypto/libraries/issues/25 for more details.
 - ~~Derived keys are not supported yet.~~ Derived keys are now supported!
-- Secp256k1 keys are not fully supported (signing and decryption work fine but moving generating or moving them does not).
+- Secp256k1 keys are not fully supported (signing and decryption work fine but generating or moving them does not).
 - Moving a key to a previously wiped RSA slot may not work. See https://github.com/trustcrypto/libraries/issues/26 for more details.
 
 ## Install
@@ -83,7 +82,7 @@ And, in this file, add the line
 agent-program path/to/ok-gpg-agent
 ```
 
-If gpg-agent is already running either restart the computer, kill the process or use the command
+If `gpg-agent` is already running, restart the computer, kill the process or use the command
 ```shell
 $ gpg-connect-agent KILLAGENT /bye
 ```
@@ -92,7 +91,7 @@ $ gpg-connect-agent KILLAGENT /bye
 
 Place the extracted binaries in a convenient place, preferably reachable by your `PATH`. `/usr/local/bin/` is a good choice.
 
-On some Linux (Debian and derivatives) the gpg-agent is automatically started by systemd.
+On some Linux (Debian and derivatives) `gpg-agent` is automatically started by systemd.
 The service file is `gpg-agent.service`, located in `/usr/lib/systemd/user/`.
 
 Make a backup of `/usr/lib/systemd/user/gpg-agent.service` and replace the line `ExecStart=/usr/bin/gpg-agent --supervised -v`
@@ -109,7 +108,7 @@ Restart the service (`sudo systemctl --user restart gpg-agent`) or kill the agen
 
 ### Agent
 
-Create the file `ok-agent.toml` in the homedir of gpg (the same folder as the `gpg.conf` file). This file will contain the configuration of the agent.
+Create the file `ok-agent.toml` in the homedir of GPG (the same folder as the `gpg.conf` file). This file will contain the configuration of the agent.
 
 For *ok-gpg-agent* to know which private key is in which slot, you must add the keygrip of the key
 in a `[[keyinfo]]` section as follow :
@@ -131,7 +130,7 @@ keygrip = "5B3E86D2F867BA1135F3754CAE4F82409F8D0AE6"
 size = 4096
 ```
 
-For derived keys the `slot` field must not be present. Instead `identity` and `ecc_type` are required:
+For derived keys, the `slot` field must not be present. Instead, `identity` and `ecc_type` are required:
 
 ```toml
 [[keyinfo]]
@@ -185,8 +184,8 @@ keygrip = "F897F717026CAB4E3CE8E5055F527B260D012824"
 To generate (or re-generate) a derived key, use the `ok-gen-key` command-line tool.
 
 This will construct a public key pair from the given identity. The generation is roughly the same as
-the official onlykey-gpg: the same identity string will generate the same public key, with the
-exception of accentuated or non-ASCII identity. For example, the official onlykey-gpg will produce
+the official `onlykey-gpg`: the same identity string will generate the same public key, with the
+exception of accentuated or non-ASCII identity. For example, the official `onlykey-gpg` will produce
 the same public key for `"aeiou"` and `"àéïòù"` whereas `ok-gen-key` will produce two different
 keys.
 
