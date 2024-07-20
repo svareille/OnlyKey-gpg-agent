@@ -685,7 +685,7 @@ impl KeyInfoCommand {
                     if let Some(fpr) = item.strip_prefix("--ssh-fpr=") {
                         ssh_fpr = Some(Some(fpr.to_owned()));
                     } else {
-                        keygrip = item.to_owned();
+                        item.clone_into(&mut keygrip);
                     }
                 }
             }

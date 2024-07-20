@@ -242,7 +242,7 @@ impl OnlyKey {
             str => {
                 if let Some(stripped) = str.strip_prefix("UNLOCKED") {
                     self.unlocked = true;
-                    self.version = stripped.to_owned();
+                    stripped.clone_into(&mut self.version);
                 }
             }
         }
