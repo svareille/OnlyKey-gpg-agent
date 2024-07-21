@@ -22,6 +22,8 @@ pub(crate) fn gen_key(identity: String, key_kind: EccKind, creation: DateTime<Ut
             EccKind::Secp256 => EccType::Secp256K1,
         },
         keygrip: String::new(),
+        validity: validity.num_days(),
+        creation: creation.timestamp(),
     });
     let verifying_key = onlykey.pubkey(&sign_key_info).context("Could not get the verifying public key")?;
 
@@ -33,6 +35,8 @@ pub(crate) fn gen_key(identity: String, key_kind: EccKind, creation: DateTime<Ut
             EccKind::Secp256 => EccType::Secp256K1,
         },
         keygrip: String::new(),
+        validity: validity.num_days(),
+        creation: creation.timestamp(),
     });
     
     let encryption_key = onlykey.pubkey(&decrypt_key_info).context("Could not get the encryption public key")?;

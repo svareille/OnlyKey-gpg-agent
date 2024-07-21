@@ -86,6 +86,14 @@ struct Args {
     /// will be used as the directory containing the `ok-agent.toml` file.
     #[arg(short='x', long, name="FILE")]
     export_config: Option<Option<PathBuf>>,
+
+    /// Export the parameters used to generate the key in the configuration file.
+    /// 
+    /// Save the validity and creation date in `ok-agent.toml` so that the key can be rebuilt again
+    /// if the public part is lost.
+    /// This parameter is only relevant with --export-config and --auto.
+    #[arg(short='p', long)]
+    export_parameters: bool,
 }
 
 fn main() -> Result<()> {
@@ -261,6 +269,8 @@ Press Enter when you are ready to continue.");
             EccKind::Secp256 => EccType::Secp256K1,
         },
         keygrip: keygrips[0].clone(),
+        validity: validity.num_days(),
+        creation: creation.timestamp(),
     });
     let decrypt_key_info = KeyInfo::DerivedKey(DerivedKeyInfo{
         identity,
@@ -270,6 +280,8 @@ Press Enter when you are ready to continue.");
             EccKind::Secp256 => EccType::Secp256K1,
         },
         keygrip: keygrips[1].clone(),
+        validity: validity.num_days(),
+        creation: creation.timestamp(),
     });
  
     let dummy_settings = DummySettings {keyinfo: vec![sign_key_info, decrypt_key_info]};

@@ -149,6 +149,15 @@ pub struct DerivedKeyInfo {
     pub ecc_type: EccType,
     /// The keygrip of this key
     pub keygrip: String,
+    /// The validity duration of the key in days
+    /// Informational only
+    #[serde(default)]
+    pub validity: i64,
+    /// The creation date in seconds since January 1, 1970 0:00:00 UTC (aka "UNIX timestamp").
+    /// Informational only
+    #[serde(default)]
+    pub creation: i64,
+    
 }
 
 impl DerivedKeyInfo {
