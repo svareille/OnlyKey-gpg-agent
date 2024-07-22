@@ -790,10 +790,11 @@ fn get_socket_file_path(homedir: &Path, gpgconf_path: Option<&Path>) -> Result<P
 /// # Panic
 /// Panic if the path is not UTF8-encoded.
 fn get_original_agent(homedir: &Path, gpgconf_path: Option<&Path>) -> Result<PathBuf, anyhow::Error> {
-    let output = Command::new(gpgconf_path.unwrap_or(Path::new("gpgconf")))
+    let path = gpgconf_path.unwrap_or(Path::new("gpgconf"));
+    let output = Command::new(path)
         .args(["--homedir", homedir.as_os_str().to_str().expect("Cannot convert homedir path to os path")])
         .args(["--list-dirs", "bindir"])
-        .output().context("Call to gpgconf failed")?;
+        .output().context(format!("Call to gpgconf ({:?}) failed", path))?;
 
     let mut path = PathBuf::from(String::from_utf8(output.stdout).expect("Agent path is not UTF8").trim());
     path.push("gpg-agent");
