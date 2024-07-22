@@ -1,4 +1,4 @@
-use std::{process::{Command, Stdio}, io::Write, path::{PathBuf, Path}, fs::{File, OpenOptions}};
+use std::{fs::{File, OpenOptions}, io::Write, path::{Path, PathBuf}, process::{Command, Stdio}};
 
 use anyhow::{Result, bail, anyhow, Context};
 
@@ -94,6 +94,11 @@ struct Args {
     /// This parameter is only relevant with --export-config and --auto.
     #[arg(short='p', long)]
     export_parameters: bool,
+
+    /// Set the path of the gpg binary.
+    /// If not given, gpg will be searched from the PATH.
+    #[arg(short, long="gpg")]
+    gpg_path: Option<PathBuf>,
 }
 
 fn main() -> Result<()> {
@@ -256,10 +261,10 @@ Press Enter when you are ready to continue.");
     let armored_key = gen_key(identity.clone(), key_kind, creation.into(), validity).context("Could not generate the key")?;
 
     if args.export_key || args.auto {
-        gpg_export_key(&armored_key, &args.homedir).context("Could not export the generated key into the keyring")?;
+        gpg_export_key(&armored_key, &args.homedir, args.gpg_path.as_deref()).context("Could not export the generated key into the keyring")?;
     }
 
-    let keygrips = keygrips_from_gpg(&armored_key).context("Could not get the keygrip of the generated key")?;
+    let keygrips = keygrips_from_gpg(&armored_key, args.gpg_path.as_deref()).context("Could not get the keygrip of the generated key")?;
 
     let sign_key_info = KeyInfo::DerivedKey(DerivedKeyInfo{
         identity: identity.clone(),
@@ -411,8 +416,14 @@ fn validate_email(input: &str) -> bool {
 /// Return keygrip of provided key by parsing `gpg` output.
 /// 
 /// Needs `gpg` to be installed and accessible.
-fn keygrips_from_gpg(armored_key: &str) -> Result<Vec<String>> {
-    let mut gpg = Command::new("gpg")
+fn keygrips_from_gpg(armored_key: &str, gpg_path: Option<&Path>) -> Result<Vec<String>> {
+
+    let gpg_path: &Path = match gpg_path {
+        Some(path) => path,
+        None => Path::new("gpg"),
+    };
+
+    let mut gpg = Command::new(gpg_path)
         .args(["--show-keys", "--with-keygrip", "--with-colons"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -449,8 +460,13 @@ fn keygrips_from_gpg(armored_key: &str) -> Result<Vec<String>> {
 /// 
 /// This operation is an "import" from the point of view of gpg
 /// Needs `gpg` to be installed and accessible.
-fn gpg_export_key(key: &str, homedir: &Option<PathBuf>) -> Result<()> {
-    let mut gpg = Command::new("gpg");
+fn gpg_export_key(key: &str, homedir: &Option<PathBuf>, gpg_path: Option<&Path>) -> Result<()> {
+    let gpg_path: &Path = match gpg_path {
+        Some(path) => path,
+        None => Path::new("gpg"),
+    };
+
+    let mut gpg = Command::new(gpg_path);
     gpg.args(["--import",])
         .stdin(Stdio::piped())
         .stdout(Stdio::inherit())
