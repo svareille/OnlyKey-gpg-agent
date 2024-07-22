@@ -68,11 +68,11 @@ pub struct AssuanListener {
 
 #[cfg(windows)]
 impl AssuanListener {
-    pub fn new(homedir: &Path, _delete_socket: bool) -> Result<Self, anyhow::Error> {
+    pub fn new(homedir: &Path, gpgconf_path: Option<&Path>, _delete_socket: bool) -> Result<Self, anyhow::Error> {
         let listener = TcpListener::bind(("127.0.0.1", 0)).context("Failed to open a listening TCP socket")?;
         info!("Listening on port {}", listener.local_addr().unwrap().port());
 
-        let agent_socket = get_socket_file_path(homedir).context("Failed to get the socket file's path")?;
+        let agent_socket = get_socket_file_path(homedir, gpgconf_path).context("Failed to get the socket file's path")?;
         info!("Socket file is {:?}", agent_socket);
 
         let mut nonce = [0u8; 16];
@@ -101,8 +101,8 @@ pub struct AssuanListener {
 
 #[cfg(unix)]
 impl AssuanListener {
-    pub fn new(homedir: &Path, delete_socket: bool) -> Result<Self, anyhow::Error> {
-        let mut agent_socket = get_socket_file_path(homedir).context("Failed to get the socket file's path")?;
+    pub fn new(homedir: &Path, gpgconf_path: Option<&Path>, delete_socket: bool) -> Result<Self, anyhow::Error> {
+        let mut agent_socket = get_socket_file_path(homedir, gpgconf_path).context("Failed to get the socket file's path")?;
         info!("Socket file is {:?}", agent_socket);
 
         if let Ok(meta_socket) = fs::metadata(&agent_socket) {
@@ -772,8 +772,9 @@ pub fn decode_percent(data: &[u8]) -> Vec<u8> {
 /// 
 /// # Panic
 /// Panic if the path is not UTF8-encoded.
-fn get_socket_file_path(homedir: &Path) -> Result<PathBuf, anyhow::Error> {
-    let output = Command::new("gpgconf")
+fn get_socket_file_path(homedir: &Path, gpgconf_path: Option<&Path>) -> Result<PathBuf, anyhow::Error> {
+
+    let output = Command::new(gpgconf_path.unwrap_or(Path::new("gpgconf")))
         .args(["--homedir", homedir.as_os_str().to_str().expect("Cannot convert homedir path to os path")])
         .args(["--list-dirs", "agent-socket"])
         .output().context("Call to gpgconf failed")?;

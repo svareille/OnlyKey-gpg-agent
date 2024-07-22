@@ -117,6 +117,7 @@ fn main() -> Result<()> {
     let mut my_agent = MyAgent::new(config_file, settings, srf_1);
     
     let agent_path = if my_agent.settings.agent_program.as_os_str().is_empty() {None} else {Some(my_agent.settings.agent_program.as_path())};
+    let gpgconf_path = if my_agent.settings.gpgconf.as_os_str().is_empty() {None} else {Some(my_agent.settings.gpgconf.clone())};
 
     let mut server = AssuanServer::new(homedir.as_path(), args.use_standard_socket, agent_path)
         .map_err(|e| {
@@ -179,7 +180,7 @@ fn main() -> Result<()> {
     }
 
     info!("Setup listener...");
-    let assuan_listener = AssuanListener::new(homedir.as_path(), my_agent.lock().unwrap().settings.delete_socket).map_err(|e| {
+    let assuan_listener = AssuanListener::new(homedir.as_path(), gpgconf_path.as_deref(), my_agent.lock().unwrap().settings.delete_socket).map_err(|e| {
         error!("Couldn't setup the assuan listener: {:?}", e);
         e
     })?;
