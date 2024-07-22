@@ -87,10 +87,11 @@ struct Args {
     #[arg(short='x', long, name="FILE")]
     export_config: Option<Option<PathBuf>>,
 
-    /// Set the path of the gpg binary.
-    /// If not given, gpg will be searched from the PATH.
+    /// Set the path of the gpg binary directory.
+    /// The given directory should contain the gpg and gpgconf binaries.
+    /// If not given, gpg-related binaries will be searched from the PATH.
     #[arg(short, long="gpg")]
-    gpg_path: Option<PathBuf>,
+    gpg_bin_path: Option<PathBuf>,
 }
 
 fn main() -> Result<()> {
@@ -253,10 +254,10 @@ Press Enter when you are ready to continue.");
     let armored_key = gen_key(identity.clone(), key_kind, creation.into(), validity).context("Could not generate the key")?;
 
     if args.export_key || args.auto {
-        gpg_export_key(&armored_key, &args.homedir, args.gpg_path.as_deref()).context("Could not export the generated key into the keyring")?;
+        gpg_export_key(&armored_key, &args.homedir, args.gpg_bin_path.as_deref()).context("Could not export the generated key into the keyring")?;
     }
 
-    let keygrips = keygrips_from_gpg(&armored_key, args.gpg_path.as_deref()).context("Could not get the keygrip of the generated key")?;
+    let keygrips = keygrips_from_gpg(&armored_key, args.gpg_bin_path.as_deref()).context("Could not get the keygrip of the generated key")?;
 
     let sign_key_info = KeyInfo::DerivedKey(DerivedKeyInfo{
         identity: identity.clone(),
@@ -408,11 +409,17 @@ fn validate_email(input: &str) -> bool {
 /// Return keygrip of provided key by parsing `gpg` output.
 /// 
 /// Needs `gpg` to be installed and accessible.
-fn keygrips_from_gpg(armored_key: &str, gpg_path: Option<&Path>) -> Result<Vec<String>> {
+fn keygrips_from_gpg(armored_key: &str, gpg_bin_path: Option<&Path>) -> Result<Vec<String>> {
 
-    let gpg_path: &Path = match gpg_path {
-        Some(path) => path,
-        None => Path::new("gpg"),
+    let gpg_path: PathBuf = match gpg_bin_path {
+        Some(path) => {
+            let mut path = path.join("gpg");
+            if cfg!(target_os = "windows") {
+                path.set_extension("exe");
+            }
+            path
+        },
+        None => PathBuf::from("gpg"),
     };
 
     let mut gpg = Command::new(gpg_path)
@@ -452,10 +459,16 @@ fn keygrips_from_gpg(armored_key: &str, gpg_path: Option<&Path>) -> Result<Vec<S
 /// 
 /// This operation is an "import" from the point of view of gpg
 /// Needs `gpg` to be installed and accessible.
-fn gpg_export_key(key: &str, homedir: &Option<PathBuf>, gpg_path: Option<&Path>) -> Result<()> {
-    let gpg_path: &Path = match gpg_path {
-        Some(path) => path,
-        None => Path::new("gpg"),
+fn gpg_export_key(key: &str, homedir: &Option<PathBuf>, gpg_bin_path: Option<&Path>) -> Result<()> {
+    let gpg_path: PathBuf = match gpg_bin_path {
+        Some(path) => {
+            let mut path = path.join("gpg");
+            if cfg!(target_os = "windows") {
+                path.set_extension("exe");
+            }
+            path
+        },
+        None => PathBuf::from("gpg"),
     };
 
     let mut gpg = Command::new(gpg_path);
