@@ -87,14 +87,6 @@ struct Args {
     #[arg(short='x', long, name="FILE")]
     export_config: Option<Option<PathBuf>>,
 
-    /// Export the parameters used to generate the key in the configuration file.
-    /// 
-    /// Save the validity and creation date in `ok-agent.toml` so that the key can be rebuilt again
-    /// if the public part is lost.
-    /// This parameter is only relevant with --export-config and --auto.
-    #[arg(short='p', long)]
-    export_parameters: bool,
-
     /// Set the path of the gpg binary.
     /// If not given, gpg will be searched from the PATH.
     #[arg(short, long="gpg")]
