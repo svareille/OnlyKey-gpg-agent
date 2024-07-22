@@ -59,7 +59,7 @@ fn main() -> Result<()> {
     if args.check_conf {
         let homedir = match args.homedir.as_deref() {
             Some(home) => home.to_owned(),
-            None => match utils::get_homedir() {
+            None => match utils::get_homedir(None) {
                 Ok(home) => home,
                 Err(e) => {
                     eprintln!("Could not get the homedir: {e:?}");
@@ -85,7 +85,7 @@ fn main() -> Result<()> {
 
     let homedir = match args.homedir.as_deref() {
         Some(home) => home.to_owned(),
-        None => match utils::get_homedir() {
+        None => match utils::get_homedir(None) {
             Ok(home) => home,
             Err(e) => {
                 error!("Could not get the homedir: {e:?}");

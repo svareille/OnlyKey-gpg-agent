@@ -301,7 +301,7 @@ Press Enter when you are ready to continue.");
             Some(None) | None => {
                 let mut config_file = match args.homedir.as_deref() {
                     Some(home) => home.to_owned(),
-                    None => utils::get_homedir().context("Could not get the homedir")?,
+                    None => utils::get_homedir(args.gpg_bin_path.as_deref()).context("Could not get the homedir")?,
                 };
             
                 config_file.push("ok-agent.toml");
