@@ -198,6 +198,9 @@ pub struct Settings {
     /// Path to the gpg-agent to use
     #[serde(default)]
     pub agent_program: PathBuf,
+    /// Path to the gpgconf to use
+    #[serde(default)]
+    pub gpgconf: PathBuf,
     /// Delete socket if already present
     #[serde(default = "_default_false")]
     pub delete_socket: bool,
