@@ -199,6 +199,7 @@ pub struct Settings {
     #[serde(default)]
     pub agent_program: PathBuf,
     /// Path to the gpgconf to use
+    /// If a relative path is given, the path will be interpreted as relative to ok-gpg-agent
     #[serde(default)]
     pub gpgconf: PathBuf,
     /// Delete socket if already present

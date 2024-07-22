@@ -117,7 +117,12 @@ fn main() -> Result<()> {
     let mut my_agent = MyAgent::new(config_file, settings, srf_1);
     
     let agent_path = if my_agent.settings.agent_program.as_os_str().is_empty() {None} else {Some(my_agent.settings.agent_program.as_path())};
-    let gpgconf_path = if my_agent.settings.gpgconf.as_os_str().is_empty() {None} else {Some(my_agent.settings.gpgconf.clone())};
+    let gpgconf_path = if my_agent.settings.gpgconf.as_os_str().is_empty() {None} else if my_agent.settings.gpgconf.is_relative() {
+        let current_exe = std::env::current_exe()?;
+        current_exe.parent().map(|p|p.join(&my_agent.settings.gpgconf))
+    } else {
+        Some(my_agent.settings.gpgconf.clone())
+    };
 
     let mut server = AssuanServer::new(homedir.as_path(), gpgconf_path.as_deref(), args.use_standard_socket, agent_path)
         .map_err(|e| {
