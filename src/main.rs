@@ -119,7 +119,7 @@ fn main() -> Result<()> {
     let agent_path = if my_agent.settings.agent_program.as_os_str().is_empty() {None} else {Some(my_agent.settings.agent_program.as_path())};
     let gpgconf_path = if my_agent.settings.gpgconf.as_os_str().is_empty() {None} else {Some(my_agent.settings.gpgconf.clone())};
 
-    let mut server = AssuanServer::new(homedir.as_path(), args.use_standard_socket, agent_path)
+    let mut server = AssuanServer::new(homedir.as_path(), gpgconf_path.as_deref(), args.use_standard_socket, agent_path)
         .map_err(|e| {
             error!("Could not create assuan server: {:?}", e);
             e

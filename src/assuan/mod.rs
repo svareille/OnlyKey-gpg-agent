@@ -493,12 +493,12 @@ impl AssuanServer {
     /// 
     /// # Panic
     /// Panics if the homedir gotten from `gpgconf` cannot be used by the OS.
-    pub fn new(homedir: &Path, use_std_socket: bool, agent_path: Option<&Path>) -> Result<Self, ServerError> {
+    pub fn new(homedir: &Path, gpgconf_path: Option<&Path>, use_std_socket: bool, agent_path: Option<&Path>) -> Result<Self, ServerError> {
         // Start gpg-agent as a server.
         // Communication will be done via standard input/output.
         let orig_agent = match agent_path {
             Some(path) => path.to_owned(),
-            None => get_original_agent(homedir).context("Failed to get the original agent")?,
+            None => get_original_agent(homedir, gpgconf_path).context("Failed to get the original agent")?,
         };
 
         let mut command = Command::new(orig_agent);
@@ -789,12 +789,8 @@ fn get_socket_file_path(homedir: &Path, gpgconf_path: Option<&Path>) -> Result<P
 /// 
 /// # Panic
 /// Panic if the path is not UTF8-encoded.
-fn get_original_agent(homedir: &Path) -> Result<PathBuf, anyhow::Error> {
-    let mut gpgconf = PathBuf::from("gpgconf");
-    if cfg!(target_os = "windows") {
-        gpgconf.set_extension("exe");
-    }
-    let output = Command::new(&gpgconf)
+fn get_original_agent(homedir: &Path, gpgconf_path: Option<&Path>) -> Result<PathBuf, anyhow::Error> {
+    let output = Command::new(gpgconf_path.unwrap_or(Path::new("gpgconf")))
         .args(["--homedir", homedir.as_os_str().to_str().expect("Cannot convert homedir path to os path")])
         .args(["--list-dirs", "bindir"])
         .output().context("Call to gpgconf failed")?;
