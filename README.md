@@ -104,6 +104,29 @@ sudo nano /usr/lib/systemd/user/gpg-agent.service
 
 Restart the service (`sudo systemctl --user restart gpg-agent`) or kill the agent (`gpg-connect-agent KILLAGENT /bye`).
 
+### Portable use on Windows
+
+It is possible to use `ok-gen-key` and `ok-gpg-agent` from a portable installation of GPG, although
+not fully convenient. 
+
+1. Follow the [guide to a portable version of GPG4Win](https://wiki.gnupg.org/Gpg4win/PortableVersion).
+   Will will now refer to the folder containing the portable version as `Gpg4win_Portable`
+2. Create a  new folder named `gnupg` in `Gpg4win_Portable` (along with `home`).
+3. Inside the `bin` folder:
+   1. Rename `gpg-agent.exe` into `original-gpg-agent.exe`.
+   2. Place `ok-gpg-agent.exe` in this folder and rename it into `gpg-agent.exe.
+4. Create the `ok-agent.toml` configuration file inside the `home` folder and populate it with:
+```toml
+agent_program = "./original-gpg-agent.exe"
+gpgconf = "./gpgconf.exe"
+```
+5. Enjoy!
+
+**Note:** a log file is always created in the temporary directory provided by the OS
+(usually `C:/Users/<user>/AppData/Local/Temp/ok-gpg-agent.log`), even if the `log_level` variable
+is set to `off` in the configuration file. If you want to keep your host clean,
+I suggest to manually remove it.
+
 ## Configure
 
 ### Agent
