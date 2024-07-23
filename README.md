@@ -157,8 +157,10 @@ The possible global options of `ok-agent.toml` are:
   decryption. Default to `"true"`.
 - `log_level`: the log level. Must be one of (case-insensitive) `"off"`, `"error"`, `"warn"`,
   `"info"`, `"debug"` or `"trace"`. Default to `"info"`.
-- `agent_program`: path to the original *gpg-agent*. If `""`, the agent advertized by `gpg-conf`
+- `agent_program`: path to the original *gpg-agent*. If `""`, the agent advertized by `gpgconf`
   will be used. Default to `""`.
+- `gpgconf`: path to the gpgconf binary. If a relative path is given, the path will be interpreted
+  as relative to `ok-gpg-agent`. If `""`, `gpgconf` will be searched on the PATH. Default to `""`.
 - `delete_socket`: boolean indicating if the Unix socket must be deleted if already present. Only
   used on Unix. Default to `"false"`.
 
