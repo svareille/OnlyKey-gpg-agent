@@ -52,6 +52,10 @@ struct Args {
     #[arg(short, long, value_parser = parse_time)]
     time: Option<DateTime<Local>>,
 
+    /// Allow the primary key to be used for authentication.
+    #[arg(short='A', long="auth")]
+    authentication: bool,
+
     /// Path to the file where to write the newly generated key.
     /// 
     /// As the produced key is ASCII-armored, it is recommended to end the filename with '.asc'.
@@ -251,7 +255,7 @@ Press Enter when you are ready to continue.");
 
     std::io::stdin().read_line(&mut String::new()).unwrap();
 
-    let armored_key = gen_key(identity.clone(), key_kind, creation.into(), validity).context("Could not generate the key")?;
+    let armored_key = gen_key(identity.clone(), key_kind, creation.into(), validity, args.authentication).context("Could not generate the key")?;
 
     if args.export_key || args.auto {
         gpg_export_key(&armored_key, &args.homedir, args.gpg_bin_path.as_deref()).context("Could not export the generated key into the keyring")?;

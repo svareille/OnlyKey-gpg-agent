@@ -4,7 +4,7 @@ use ok_gpg_agent::{config::{DerivedKeyInfo, EccType, KeyInfo}, onlykey::OnlyKey}
 use sequoia_openpgp::{Cert, packet::{UserID, Key, prelude::Key4, key::{PublicParts, PrimaryRole, SubordinateRole}, signature::SignatureBuilder}, Packet, crypto::{mpi::{PublicKey, MPI}, Signer}, types::{Curve, SignatureType, SymmetricAlgorithm, PublicKeyAlgorithm, HashAlgorithm, KeyFlags, CompressionAlgorithm, Features}, serialize::SerializeInto};
 use crate::EccKind;
 
-pub(crate) fn gen_key(identity: String, key_kind: EccKind, creation: DateTime<Utc>, validity: Duration) -> Result<String> {
+pub(crate) fn gen_key(identity: String, key_kind: EccKind, creation: DateTime<Utc>, validity: Duration, authentication: bool) -> Result<String> {
 
     let onlykey = match OnlyKey::hid_connect().context("Could not connect to the OnlyKey")? {
         Some(ok) => ok,
@@ -65,7 +65,11 @@ pub(crate) fn gen_key(identity: String, key_kind: EccKind, creation: DateTime<Ut
         .set_hash_algo(HashAlgorithm::SHA512)
         .set_signature_creation_time(creation)
         .and_then(|b|b.set_key_validity_period(validity.to_std().unwrap()))
-        .and_then(|b|b.set_key_flags(KeyFlags::empty().set_certification().set_signing()))
+        .and_then(|b|b.set_key_flags(
+            {
+                let flags = KeyFlags::empty().set_certification().set_signing();
+                if authentication {flags.set_authentication()} else {flags}
+            }))
         .and_then(|b|b.set_preferred_symmetric_algorithms(vec![
             SymmetricAlgorithm::AES256,
             SymmetricAlgorithm::AES192,
