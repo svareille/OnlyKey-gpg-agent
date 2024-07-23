@@ -115,8 +115,13 @@ fn main() -> Result<()> {
     let srf: Arc<Mutex<Vec<ServerResponseFilter>>> = Arc::new(Mutex::new(Vec::new()));
     let srf_1 = srf.clone();
     let mut my_agent = MyAgent::new(config_file, settings, srf_1);
-    
-    let agent_path = if my_agent.settings.agent_program.as_os_str().is_empty() {None} else {Some(my_agent.settings.agent_program.as_path())};
+
+    let agent_path = if my_agent.settings.agent_program.as_os_str().is_empty() {None} else if my_agent.settings.agent_program.is_relative() {
+        let current_exe = std::env::current_exe()?;
+        current_exe.parent().map(|p|p.join(&my_agent.settings.agent_program))
+    } else {
+        Some(my_agent.settings.agent_program.clone())
+    };
     let gpgconf_path = if my_agent.settings.gpgconf.as_os_str().is_empty() {None} else if my_agent.settings.gpgconf.is_relative() {
         let current_exe = std::env::current_exe()?;
         current_exe.parent().map(|p|p.join(&my_agent.settings.gpgconf))
@@ -124,7 +129,7 @@ fn main() -> Result<()> {
         Some(my_agent.settings.gpgconf.clone())
     };
 
-    let mut server = AssuanServer::new(homedir.as_path(), gpgconf_path.as_deref(), args.use_standard_socket, agent_path)
+    let mut server = AssuanServer::new(homedir.as_path(), gpgconf_path.as_deref(), args.use_standard_socket, agent_path.as_deref())
         .map_err(|e| {
             error!("Could not create assuan server: {:?}", e);
             e

@@ -196,6 +196,7 @@ pub struct Settings {
     #[serde(deserialize_with = "deserialize_log_level_filter", serialize_with = "serialize_log_level_filter", default = "_default_log_level")]
     pub log_level: log::LevelFilter,
     /// Path to the gpg-agent to use
+    /// If a relative path is given, the path will be interpreted as relative to ok-gpg-agent
     #[serde(default)]
     pub agent_program: PathBuf,
     /// Path to the gpgconf to use
