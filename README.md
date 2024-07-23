@@ -165,6 +165,12 @@ keygrip = "7787EDEE866D4A3534BF5B5B9E20A3F7D616AF50"
 `ecc_type` can be any of `Ed25519` (signature key), `Cv25519` (decryption key), `Nist256P1` and
 `Secp256K1`.
 
+Two additional optional fields are present for derived keys: `creation` and `validity`, both integers.
+The `creation` field contains the creation date of the key as a UNIX timestamp.
+The `validity` field contains the validity duration of the key in days.
+Both these fields are informational only. Their values are not used anywhere and their sole purpose
+is to make the re-generation of the keys easier.
+
 To obtain the keygrip of a key, run:
 ```shell
 $ gpg --with-keygrip -k
@@ -215,6 +221,9 @@ the same public key for `"aeiou"` and `"àéïòù"` whereas `ok-gen-key` will p
 keys.
 
 Key generation can be done interactively or using command-line options.
+
+The `creation` field of the `keyinfo` section correspond to the `--time` parameter.
+The `validity` field of the `keyinfo` section correspond to the `--validity` parameter.
 
 ```console
 Usage: ok-gen-key.exe [OPTIONS]
