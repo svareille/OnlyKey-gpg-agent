@@ -291,7 +291,7 @@ The identity string will be formed as "Real name (Comment) <Email>""#
     );
     println!();
     println!(
-        "You will be asked twice to authorize two signing operation.
+        "You will be asked twice to authorize two signing operations.
 If you have enabled 'challenge mode' for derived key, you will have to enter two 3-digit challenges.
 Make sure your OnlyKey is plugged in and unlocked.
 Press Enter when you are ready to continue."
