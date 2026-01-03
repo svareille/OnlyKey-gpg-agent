@@ -276,7 +276,13 @@ The identity string will be formed as "Real name (Comment) <Email>""#
     println!(
         "About to generate a {:?} key, valid until {} for the identity \"{}\"",
         key_kind,
-        expire_at(validity, creation).context("Could not compute expiration time")?,
+        if validity.is_zero() {
+            String::from("eternity")
+        } else {
+            expire_at(validity, creation)
+                .context("Could not compute expiration time")?
+                .to_string()
+        },
         identity
     );
     println!(
