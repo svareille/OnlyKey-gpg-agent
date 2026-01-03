@@ -16,8 +16,6 @@ mod stream;
 use stream::Stream;
 
 #[cfg(windows)]
-use rand::{thread_rng, Fill};
-#[cfg(windows)]
 use std::fs::File;
 #[cfg(windows)]
 use std::net::TcpListener;
@@ -80,6 +78,8 @@ impl AssuanListener {
         gpgconf_path: Option<&Path>,
         _delete_socket: bool,
     ) -> Result<Self, anyhow::Error> {
+        use rand::Rng;
+
         let listener =
             TcpListener::bind(("127.0.0.1", 0)).context("Failed to open a listening TCP socket")?;
         info!(
@@ -92,10 +92,8 @@ impl AssuanListener {
         info!("Socket file is {:?}", agent_socket);
 
         let mut nonce = [0u8; 16];
-        let mut rng = thread_rng();
-        nonce
-            .try_fill(&mut rng)
-            .context("Failed to initialize the nonce")?;
+        let mut rng = rand::rng();
+        rng.fill(&mut nonce[..]);
 
         let mut file = File::create(&agent_socket).context("Failed to create the socket file")?;
         file.write_all(format!("{}\n", listener.local_addr().unwrap().port()).as_bytes())

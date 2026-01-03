@@ -56,7 +56,7 @@ fn main() -> Result<()> {
 
     let keyfile = args.keyfile.unwrap();
 
-    let key = if keyfile == PathBuf::from("-") {
+    let key = if &keyfile == "-" {
         Cert::from_reader(io::stdin()).context("Couldn't read key from stdin")?
     } else {
         Cert::from_file(&keyfile)
@@ -155,7 +155,7 @@ Make sure your key is not yet in config mode or else the connection will fail."
 
     for &selected in &selected_keys {
         let key_to_move = key.keys().nth(selected).unwrap();
-        match key_to_move.mpis() {
+        match key_to_move.key().mpis() {
             sequoia_openpgp::crypto::mpi::PublicKey::RSA { .. } => {
                 match empty_slots
                     .iter()
@@ -203,7 +203,9 @@ Make sure your key is not yet in config mode or else the connection will fail."
                 | Curve::NistP521
                 | Curve::BrainpoolP256
                 | Curve::BrainpoolP512
-                | Curve::Unknown(_) => {
+                | Curve::BrainpoolP384
+                | Curve::Unknown(_)
+                | _ => {
                     bail!(
                         "Key type not supported: {}",
                         key_info_str(&key_to_move, selected == 0)
@@ -236,10 +238,13 @@ Press 'Enter' when you're ready to continue."
     );
     let _: String = read_line!();
 
-    let mut password = if keys_slots
-        .iter()
-        .any(|(index, _, _)| !key.keys().nth(*index).unwrap().has_unencrypted_secret())
-    {
+    let mut password = if keys_slots.iter().any(|(index, _, _)| {
+        !key.keys()
+            .nth(*index)
+            .unwrap()
+            .key()
+            .has_unencrypted_secret()
+    }) {
         rpassword::prompt_password("Please enter your key's password: ").unwrap()
     } else {
         String::new()
@@ -278,12 +283,15 @@ Press 'Enter' when you're ready to continue."
                     };
                     match key_material {
                         SecretKeyMaterial::RSA { d: _, p, q, u: _ } => {
-                            let key_type = KeyType::Rsa(key.mpis().bits().unwrap_or_default());
+                            let key_type =
+                                KeyType::Rsa(key.key().mpis().bits().unwrap_or_default());
                             let mut secret_val: Vec<u8> = p
-                                .value_padded(key.mpis().bits().unwrap_or_default() / 2 / 8)
+                                .value_padded(key.key().mpis().bits().unwrap_or_default() / 2 / 8)
                                 .to_vec();
                             secret_val.extend_from_slice(
-                                &q.value_padded(key.mpis().bits().unwrap_or_default() / 2 / 8),
+                                &q.value_padded(
+                                    key.key().mpis().bits().unwrap_or_default() / 2 / 8,
+                                ),
                             );
                             onlykey.set_private(*slot, key_type, key_role, &secret_val)?;
                             Ok(())
@@ -291,7 +299,7 @@ Press 'Enter' when you're ready to continue."
                         SecretKeyMaterial::EdDSA { scalar }
                         | SecretKeyMaterial::ECDSA { scalar }
                         | SecretKeyMaterial::ECDH { scalar } => {
-                            let key_type = match key.mpis() {
+                            let key_type = match key.key().mpis() {
                                 sequoia_openpgp::crypto::mpi::PublicKey::EdDSA { curve, q: _ }
                                 | sequoia_openpgp::crypto::mpi::PublicKey::ECDSA { curve, q: _ }
                                 | sequoia_openpgp::crypto::mpi::PublicKey::ECDH {
@@ -344,7 +352,7 @@ Press 'Enter' when you're ready to continue."
         println!(
             "Key \"{}\" of ID {} transferred to slot {}",
             key_info_str(&key.keys().nth(index).unwrap(), primary),
-            key.keys().nth(index).unwrap().fingerprint(),
+            key.keys().nth(index).unwrap().key().fingerprint(),
             slot
         );
     }
@@ -361,7 +369,7 @@ fn display_key(key: &ValidCert) {
     println!("0: {}", key_info_str(&primary, true));
     println!(
         "         {fingerprint}",
-        fingerprint = primary.fingerprint()
+        fingerprint = primary.key().fingerprint()
     );
     // User Ids
     for uid in key.userids() {
@@ -371,7 +379,10 @@ fn display_key(key: &ValidCert) {
     let mut i = 1;
     for subkey in key.keys().subkeys() {
         println!("{i}: {}", key_info_str(&subkey, false));
-        println!("         {fingerprint}", fingerprint = subkey.fingerprint());
+        println!(
+            "         {fingerprint}",
+            fingerprint = subkey.key().fingerprint()
+        );
         i += 1;
     }
 }
@@ -381,7 +392,8 @@ where
     P: 'a + sequoia_openpgp::packet::key::KeyParts,
     R: 'a + sequoia_openpgp::packet::key::KeyRole,
     R2: Copy,
-    ValidKeyAmalgamation<'a, P, R, R2>: ValidAmalgamation<'a, Key<P, R>>,
+    ValidKeyAmalgamation<'a, P, R, R2>: ValidAmalgamation<'a, Key<P, R>>
+        + sequoia_openpgp::cert::amalgamation::key::PrimaryKey<'a, P, R>,
 {
     let sec = if primary {
         if has_secret(key) {
@@ -394,7 +406,7 @@ where
     } else {
         "ssb#"
     };
-    let creation_time: DateTime<Local> = key.creation_time().into();
+    let creation_time: DateTime<Local> = key.key().creation_time().into();
     format!("{sec}  {type} {creation_time} {usage} {expiration}",
         type=algo_str(key),
         creation_time=creation_time.format("%Y-%m-%d"),
@@ -430,12 +442,12 @@ where
     R: 'a + sequoia_openpgp::packet::key::KeyRole,
     R2: Copy,
 {
-    match key.mpis() {
+    match key.key().mpis() {
         sequoia_openpgp::crypto::mpi::PublicKey::RSA { .. } => {
-            format!("rsa{}", key.mpis().bits().unwrap_or_default())
+            format!("rsa{}", key.key().mpis().bits().unwrap_or_default())
         }
         sequoia_openpgp::crypto::mpi::PublicKey::DSA { .. } => {
-            format!("dsa{}", key.mpis().bits().unwrap_or_default())
+            format!("dsa{}", key.key().mpis().bits().unwrap_or_default())
         }
         sequoia_openpgp::crypto::mpi::PublicKey::ElGamal { .. } => "elgamal".to_string(),
         sequoia_openpgp::crypto::mpi::PublicKey::EdDSA { curve, q: _ } => curve_to_str(curve),
@@ -455,14 +467,16 @@ where
 
 fn curve_to_str(curve: &Curve) -> String {
     match curve {
-        sequoia_openpgp::types::Curve::NistP256 => "nistp256".to_string(),
-        sequoia_openpgp::types::Curve::NistP384 => "nistp384".to_string(),
-        sequoia_openpgp::types::Curve::NistP521 => "nistp521".to_string(),
-        sequoia_openpgp::types::Curve::BrainpoolP256 => "brainpoolp256".to_string(),
-        sequoia_openpgp::types::Curve::BrainpoolP512 => "brainpoolp512".to_string(),
-        sequoia_openpgp::types::Curve::Ed25519 => "ed25519".to_string(),
-        sequoia_openpgp::types::Curve::Cv25519 => "cv25519".to_string(),
-        sequoia_openpgp::types::Curve::Unknown(_) => "unknown".to_string(),
+        Curve::NistP256 => "nistp256".to_string(),
+        Curve::NistP384 => "nistp384".to_string(),
+        Curve::NistP521 => "nistp521".to_string(),
+        Curve::BrainpoolP256 => "brainpoolp256".to_string(),
+        Curve::BrainpoolP384 => "brainpoolp384".to_string(),
+        Curve::BrainpoolP512 => "brainpoolp512".to_string(),
+        Curve::Ed25519 => "ed25519".to_string(),
+        Curve::Cv25519 => "cv25519".to_string(),
+        Curve::Unknown(_) => "unknown".to_string(),
+        _ => todo!(),
     }
 }
 
@@ -471,7 +485,8 @@ where
     P: 'a + sequoia_openpgp::packet::key::KeyParts,
     R: 'a + sequoia_openpgp::packet::key::KeyRole,
     R2: Copy,
-    ValidKeyAmalgamation<'a, P, R, R2>: ValidAmalgamation<'a, Key<P, R>>,
+    ValidKeyAmalgamation<'a, P, R, R2>: ValidAmalgamation<'a, Key<P, R>>
+        + sequoia_openpgp::cert::amalgamation::key::PrimaryKey<'a, P, R>,
 {
     let mut s = String::new();
     if key.for_storage_encryption() || key.for_transport_encryption() {
@@ -497,7 +512,8 @@ where
     P: 'a + sequoia_openpgp::packet::key::KeyParts,
     R: 'a + sequoia_openpgp::packet::key::KeyRole,
     R2: Copy,
-    ValidKeyAmalgamation<'a, P, R, R2>: ValidAmalgamation<'a, Key<P, R>>,
+    ValidKeyAmalgamation<'a, P, R, R2>: ValidAmalgamation<'a, Key<P, R>>
+        + sequoia_openpgp::cert::amalgamation::key::PrimaryKey<'a, P, R>,
 {
     match key.key_expiration_time() {
         None => String::new(),

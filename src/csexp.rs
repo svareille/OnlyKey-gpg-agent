@@ -18,7 +18,7 @@ pub enum Sexp {
 
 impl Sexp {
     /// Parse input, returning an [Sexp::Atom] and the rest of the expression
-    fn parse_atom(s: &[u8]) -> Result<Sexp, SexpError> {
+    fn parse_atom(s: &'_ [u8]) -> Result<Sexp, SexpError<'_>> {
         let (size, s) = {
             let mut split = s.splitn(2, |&e| e == b':');
             match split.next() {
@@ -45,7 +45,7 @@ impl Sexp {
         }
     }
 
-    pub fn parse(mut s: &[u8]) -> Result<Sexp, SexpError> {
+    pub fn parse(mut s: &'_ [u8]) -> Result<Sexp, SexpError<'_>> {
         if s.starts_with(b"(") {
             // Sexp is a list
             let mut sexprs = Vec::new();

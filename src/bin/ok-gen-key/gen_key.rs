@@ -122,7 +122,6 @@ pub(crate) fn gen_key(
                 SymmetricAlgorithm::AES256,
                 SymmetricAlgorithm::AES192,
                 SymmetricAlgorithm::AES128,
-                SymmetricAlgorithm::TripleDES,
             ])
         })
         .and_then(|b| {
@@ -142,17 +141,17 @@ pub(crate) fn gen_key(
             ])
         })
         .and_then(|b| b.set_issuer_fingerprint(primary_key.fingerprint()))
-        .and_then(|b| b.set_features(Features::empty().set_aead().set_mdc()))
+        .and_then(|b| b.set_features(Features::empty().set_seipdv1()))
         .context("Failed to create User ID's signature Builder")?;
 
     let uid_signature = uid_sig_builder
         .sign_userid_binding(&mut ok_signer, None, &user_id)
         .context("Failed to create the User ID's signature")?;
 
-    public_key = public_key
+    (public_key, _) = public_key
         .insert_packets(user_id)
         .context("Failed to add the User ID to the cert")?;
-    public_key = public_key
+    (public_key, _) = public_key
         .insert_packets(uid_signature)
         .context("Failed to add the User ID's signature to the cert")?;
 
@@ -198,10 +197,10 @@ pub(crate) fn gen_key(
         .sign_subkey_binding(&mut ok_signer, None, &subkey)
         .context("Failed to create the subkey's signature")?;
 
-    public_key = public_key
+    (public_key, _) = public_key
         .insert_packets(subkey)
         .context("Failed to add the subkey to the cert")?;
-    public_key = public_key
+    (public_key, _) = public_key
         .insert_packets(subkey_signature)
         .context("Failed to add the subkey's signature to the cert")?;
 
