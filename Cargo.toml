@@ -3,7 +3,7 @@ name = "ok-gpg-agent"
 description = "A cross-platform agent for using OnlyKey"
 version = "1.0.0"
 edition = "2021"
-authors = ["svareille",]
+authors = ["svareille"]
 readme = "README.md"
 license = "GPL-3.0"
 homepage = "https://github.com/svareille/OnlyKey-gpg-agent"
@@ -13,7 +13,7 @@ keywords = ["gpg", "pgp", "onlykey"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-anyhow ="1.0.68"
+anyhow = "1.0.68"
 base64 = "0.22.1"
 chrono = "0.4.23"
 clap = { version = "4.1", features = ["derive"] }
@@ -29,7 +29,11 @@ num-traits = "0.2.15"
 rand = "0.8.5"
 regex = "1.7.1"
 rpassword = "7.2.0"
-sequoia-openpgp = { version = "1.13", default-features = false, features = ["crypto-rust", "allow-experimental-crypto", "allow-variable-time-crypto"]}
+sequoia-openpgp = { version = "1.13", default-features = false, features = [
+    "crypto-rust",
+    "allow-experimental-crypto",
+    "allow-variable-time-crypto",
+] }
 serde = { version = "1.0", features = ["derive"] }
 sha1 = "0.10.5"
 sha2 = "0.10.6"

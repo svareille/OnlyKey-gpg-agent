@@ -1,28 +1,35 @@
-use std::{net::Shutdown, path::{PathBuf, Path}, io::{Write, BufWriter, BufReader, BufRead, ErrorKind}};
-use std::{process::{Command, Child, Stdio, ChildStdout, ChildStdin}, sync::{Arc, Mutex}};
+use std::{
+    io::{BufRead, BufReader, BufWriter, ErrorKind, Write},
+    net::Shutdown,
+    path::{Path, PathBuf},
+};
+use std::{
+    process::{Child, ChildStdin, ChildStdout, Command, Stdio},
+    sync::{Arc, Mutex},
+};
 
 use anyhow::Context;
-use log::{info, trace, error, debug};
+use log::{debug, error, info, trace};
 use thiserror::Error;
 
 mod stream;
 use stream::Stream;
 
 #[cfg(windows)]
-use std::os::windows::process::CommandExt;
-#[cfg(windows)]
-use std::net::TcpListener;
-#[cfg(windows)]
 use rand::{thread_rng, Fill};
 #[cfg(windows)]
 use std::fs::File;
+#[cfg(windows)]
+use std::net::TcpListener;
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
 
 #[cfg(unix)]
-use std::os::unix::{net::UnixListener, prelude::FileTypeExt};
+use regex::Regex;
 #[cfg(unix)]
 use std::fs;
 #[cfg(unix)]
-use regex::Regex;
+use std::os::unix::{net::UnixListener, prelude::FileTypeExt};
 
 const LINE_LENGHT: usize = 1000;
 
@@ -68,28 +75,48 @@ pub struct AssuanListener {
 
 #[cfg(windows)]
 impl AssuanListener {
-    pub fn new(homedir: &Path, gpgconf_path: Option<&Path>, _delete_socket: bool) -> Result<Self, anyhow::Error> {
-        let listener = TcpListener::bind(("127.0.0.1", 0)).context("Failed to open a listening TCP socket")?;
-        info!("Listening on port {}", listener.local_addr().unwrap().port());
+    pub fn new(
+        homedir: &Path,
+        gpgconf_path: Option<&Path>,
+        _delete_socket: bool,
+    ) -> Result<Self, anyhow::Error> {
+        let listener =
+            TcpListener::bind(("127.0.0.1", 0)).context("Failed to open a listening TCP socket")?;
+        info!(
+            "Listening on port {}",
+            listener.local_addr().unwrap().port()
+        );
 
-        let agent_socket = get_socket_file_path(homedir, gpgconf_path).context("Failed to get the socket file's path")?;
+        let agent_socket = get_socket_file_path(homedir, gpgconf_path)
+            .context("Failed to get the socket file's path")?;
         info!("Socket file is {:?}", agent_socket);
 
         let mut nonce = [0u8; 16];
         let mut rng = thread_rng();
-        nonce.try_fill(&mut rng).context("Failed to initialize the nonce")?;
+        nonce
+            .try_fill(&mut rng)
+            .context("Failed to initialize the nonce")?;
 
         let mut file = File::create(&agent_socket).context("Failed to create the socket file")?;
-        file.write_all(format!("{}\n", listener.local_addr().unwrap().port()).as_bytes()).context("Failed to write data to socket file")?;
-        file.write_all(&nonce).context("Failed to write data to socket file")?;
+        file.write_all(format!("{}\n", listener.local_addr().unwrap().port()).as_bytes())
+            .context("Failed to write data to socket file")?;
+        file.write_all(&nonce)
+            .context("Failed to write data to socket file")?;
 
-        Ok(AssuanListener { tcp_listener: listener, _socket_file: agent_socket, nonce})
+        Ok(AssuanListener {
+            tcp_listener: listener,
+            _socket_file: agent_socket,
+            nonce,
+        })
     }
 
     pub fn accept(&self) -> Result<AssuanClient, std::io::Error> {
         let (socket, addr) = self.tcp_listener.accept()?;
         info!("Connection with {}", addr);
-        Ok(AssuanClient {reader: BufReader::new(Stream { stream: socket }), nonce: self.nonce })
+        Ok(AssuanClient {
+            reader: BufReader::new(Stream { stream: socket }),
+            nonce: self.nonce,
+        })
     }
 }
 
@@ -101,8 +128,13 @@ pub struct AssuanListener {
 
 #[cfg(unix)]
 impl AssuanListener {
-    pub fn new(homedir: &Path, gpgconf_path: Option<&Path>, delete_socket: bool) -> Result<Self, anyhow::Error> {
-        let mut agent_socket = get_socket_file_path(homedir, gpgconf_path).context("Failed to get the socket file's path")?;
+    pub fn new(
+        homedir: &Path,
+        gpgconf_path: Option<&Path>,
+        delete_socket: bool,
+    ) -> Result<Self, anyhow::Error> {
+        let mut agent_socket = get_socket_file_path(homedir, gpgconf_path)
+            .context("Failed to get the socket file's path")?;
         info!("Socket file is {:?}", agent_socket);
 
         if let Ok(meta_socket) = fs::metadata(&agent_socket) {
@@ -117,14 +149,16 @@ impl AssuanListener {
                     let re = Regex::new(
                         r#"%Assuan%
     socket=(.*)"#,
-                    ).unwrap();
+                    )
+                    .unwrap();
                     if let Some(cap) = re.captures(&content) {
                         let mut socket_path = cap[1].to_owned();
                         // Replacing environment variables
                         let re = Regex::new(r#"(\$\{([^}]*)})"#).unwrap();
                         for cap in re.captures_iter(&cap[1]) {
                             let to_replace = &cap[1];
-                            let var = std::env::var(&cap[2]).with_context(|| format!("Failed to read env var '{}'", &cap[2]))?;
+                            let var = std::env::var(&cap[2])
+                                .with_context(|| format!("Failed to read env var '{}'", &cap[2]))?;
                             socket_path = socket_path.replace(to_replace, &var);
                         }
                         agent_socket = PathBuf::from(&socket_path);
@@ -133,30 +167,35 @@ impl AssuanListener {
                 }
             }
         }
-        
 
         if delete_socket {
             match std::fs::remove_file(&agent_socket) {
-                Ok(()) => {},
+                Ok(()) => {}
                 Err(e) => match e.kind() {
-                    std::io::ErrorKind::NotFound => {},
+                    std::io::ErrorKind::NotFound => {}
                     _ => return Err(e).context("Failed to remove socket file"),
                 },
             }
         }
 
-        let listener = UnixListener::bind(&agent_socket).context("Failed to open the Unix socket")?;
+        let listener =
+            UnixListener::bind(&agent_socket).context("Failed to open the Unix socket")?;
 
         debug!("Unix socket bound");
 
-        Ok(AssuanListener { listener, socket_file: agent_socket})
+        Ok(AssuanListener {
+            listener,
+            socket_file: agent_socket,
+        })
     }
 
     pub fn accept(&self) -> Result<AssuanClient, std::io::Error> {
         let (stream, _) = self.listener.accept()?;
-        let stream = Stream {stream};
+        let stream = Stream { stream };
         info!("New connection");
-        Ok(AssuanClient {reader: BufReader::new(stream)})
+        Ok(AssuanClient {
+            reader: BufReader::new(stream),
+        })
     }
 }
 
@@ -190,8 +229,7 @@ pub enum AssuanCommand {
 }
 
 #[allow(dead_code)]
-#[derive(Debug)]
-#[derive(PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum AssuanResponse {
     /// Request is successful
     Ok(Option<String>),
@@ -232,9 +270,9 @@ pub struct AssuanClient {
 
 impl AssuanClient {
     /// Connect the client.
-    /// 
+    ///
     /// # Errors
-    /// Return [`ClientError::IOError`] if the read operation is unsuccessful or 
+    /// Return [`ClientError::IOError`] if the read operation is unsuccessful or
     /// a [`ClientError::WrongNonce`] if the provided nonce doesn't match.
     pub fn connect(&mut self) -> Result<(), ClientError> {
         self.validate()?;
@@ -247,7 +285,7 @@ impl AssuanClient {
     }
 
     /// Validate the client by checking the nonce.
-    /// 
+    ///
     /// # Errors
     /// Return [`ClientError::WrongNonce`] if the provided nonce doesn't match or
     /// [`ClientError::IOError`] if the underlying operation failed.
@@ -270,7 +308,7 @@ impl AssuanClient {
     }
 
     /// Receive a command from the client.
-    /// 
+    ///
     /// # Errors
     /// Return [`ClientError::InvalidCommand(Vec<u8>)`] if the read command is not a valid UTF8
     /// string or
@@ -303,38 +341,46 @@ impl AssuanClient {
 
         let (command, parameters) = buf.split_at(command_end);
 
-        let command = String::from_utf8(command.to_vec()).map_err(|_| ClientError::InvalidCommand(buf.clone()))?;
+        let command = String::from_utf8(command.to_vec())
+            .map_err(|_| ClientError::InvalidCommand(buf.clone()))?;
         // Remove space character at beginning
-        let parameters = if parameters.is_empty() {parameters} else {&parameters[1..]}; 
+        let parameters = if parameters.is_empty() {
+            parameters
+        } else {
+            &parameters[1..]
+        };
 
         match command.as_str() {
             "BYE" => {
                 self.close()?;
                 Ok(AssuanCommand::Bye)
-            },
-            "RESET" => {
-                Ok(AssuanCommand::Reset)
-            },
-            "END" => {
-                Ok(AssuanCommand::End)
-            },
+            }
+            "RESET" => Ok(AssuanCommand::Reset),
+            "END" => Ok(AssuanCommand::End),
             "NOP" => {
                 self.send_ok("")?;
                 Ok(AssuanCommand::Nop)
-            },
+            }
             "D" => {
                 let data = decode_percent(parameters);
                 Ok(AssuanCommand::Data(data))
             }
             _ => {
-                let param = if parameters.is_empty() {None} else {Some(parameters.to_vec())};
-                Ok(AssuanCommand::Command { command, parameters: param })
+                let param = if parameters.is_empty() {
+                    None
+                } else {
+                    Some(parameters.to_vec())
+                };
+                Ok(AssuanCommand::Command {
+                    command,
+                    parameters: param,
+                })
             }
         }
     }
 
     /// Send a response to the client.
-    /// 
+    ///
     /// # Errors
     /// Return [`ClientError::InvalidKeyword`] if a provided keyword doesn't start with a letter or
     /// an underscore or
@@ -352,7 +398,7 @@ impl AssuanClient {
                 buf = validate_line(buf);
                 buf.push(b'\n');
                 stream.write_all(&buf)?;
-            },
+            }
             AssuanResponse::Err { code, description } => {
                 let mut buf: Vec<u8> = Vec::from(b"ERR ".as_slice());
                 buf.extend_from_slice(code.as_bytes());
@@ -363,13 +409,13 @@ impl AssuanClient {
                 buf = validate_line(buf);
                 buf.push(b'\n');
                 stream.write_all(&buf)?;
-            },
+            }
             AssuanResponse::End => {
                 let mut buf: Vec<u8> = Vec::from(b"END".as_slice());
                 buf = validate_line(buf);
                 buf.push(b'\n');
                 stream.write_all(&buf)?;
-            },
+            }
             AssuanResponse::Processing { keyword, info } => {
                 if !keyword.starts_with(|c: char| c.is_ascii_alphabetic() || c == '_') {
                     return Err(ClientError::InvalidKeyword);
@@ -383,7 +429,7 @@ impl AssuanClient {
                 buf = validate_line(buf);
                 buf.push(b'\n');
                 stream.write_all(&buf)?;
-            },
+            }
             AssuanResponse::Comment(text) => {
                 for line in text.lines() {
                     let mut buf: Vec<u8> = Vec::from(b"# ".as_slice());
@@ -392,14 +438,17 @@ impl AssuanClient {
                     buf.push(b'\n');
                     stream.write_all(&buf)?;
                 }
-            },
+            }
             AssuanResponse::Data(mut data) => {
-                data = data.iter().flat_map(|&b| {
-                    if b == b'%' || b == b'\n' || b == b'\r' {
-                        return format!("%{:02X}", b).as_bytes().to_vec();
-                    }
-                    vec![b]
-                }).collect();
+                data = data
+                    .iter()
+                    .flat_map(|&b| {
+                        if b == b'%' || b == b'\n' || b == b'\r' {
+                            return format!("%{:02X}", b).as_bytes().to_vec();
+                        }
+                        vec![b]
+                    })
+                    .collect();
 
                 for chunck in data.chunks(LINE_LENGHT - 3) {
                     let mut buf: Vec<u8> = Vec::from(b"D ".as_slice());
@@ -408,8 +457,11 @@ impl AssuanClient {
                     buf.push(b'\n');
                     stream.write_all(&buf)?;
                 }
-            },
-            AssuanResponse::Inquire { keyword, parameters } => {
+            }
+            AssuanResponse::Inquire {
+                keyword,
+                parameters,
+            } => {
                 if !keyword.starts_with(|c: char| c.is_ascii_alphabetic() || c == '_') {
                     return Err(ClientError::InvalidKeyword);
                 }
@@ -422,7 +474,7 @@ impl AssuanClient {
                 buf = validate_line(buf);
                 buf.push(b'\n');
                 stream.write_all(&buf)?;
-            },
+            }
             AssuanResponse::Unknown(mut data) => {
                 data = validate_line(data);
                 data.push(b'\n');
@@ -433,27 +485,41 @@ impl AssuanClient {
     }
 
     /// Send OK to the client.
-    /// 
+    ///
     /// # Errors
     /// Return [`ClientError::InvalidKeyword`] if a provided keyword doesn't start with a letter or
     /// an underscore or
     /// [`ClientError::IOError`] if the underlying operation failed.
     pub fn send_ok(&mut self, info: &str) -> Result<(), ClientError> {
-        self.send(AssuanResponse::Ok(if info.is_empty() {None} else {Some(info.to_owned())}))
+        self.send(AssuanResponse::Ok(if info.is_empty() {
+            None
+        } else {
+            Some(info.to_owned())
+        }))
     }
 
     /// Send ERR to the client.
-    /// 
+    ///
     /// # Errors
     /// Return [`ClientError::InvalidKeyword`] if a provided keyword doesn't start with a letter or
     /// an underscore or
     /// [`ClientError::IOError`] if the underlying operation failed.
     pub fn send_err(&mut self, code: &str, desc: Option<&str>) -> Result<(), ClientError> {
-        self.send(AssuanResponse::Err{code: code.to_owned(), description: desc.map(String::from)})
+        self.send(AssuanResponse::Err {
+            code: code.to_owned(),
+            description: desc.map(String::from),
+        })
     }
 
-    pub fn inquire(&mut self, keyword: String, parameters: Option<String>) -> Result<Vec<u8>, ClientError> {
-        self.send(AssuanResponse::Inquire { keyword, parameters })?;
+    pub fn inquire(
+        &mut self,
+        keyword: String,
+        parameters: Option<String>,
+    ) -> Result<Vec<u8>, ClientError> {
+        self.send(AssuanResponse::Inquire {
+            keyword,
+            parameters,
+        })?;
         let mut data = Vec::new();
         loop {
             match self.recv()? {
@@ -478,7 +544,7 @@ impl Clone for AssuanClient {
         Self {
             reader: BufReader::new(stream),
             #[cfg(windows)]
-            nonce: self.nonce
+            nonce: self.nonce,
         }
     }
 }
@@ -490,19 +556,31 @@ pub struct AssuanServer {
 
 impl AssuanServer {
     /// Connect to the original `gpg-agent`.
-    /// 
+    ///
     /// # Panic
     /// Panics if the homedir gotten from `gpgconf` cannot be used by the OS.
-    pub fn new(homedir: &Path, gpgconf_path: Option<&Path>, use_std_socket: bool, agent_path: Option<&Path>) -> Result<Self, ServerError> {
+    pub fn new(
+        homedir: &Path,
+        gpgconf_path: Option<&Path>,
+        use_std_socket: bool,
+        agent_path: Option<&Path>,
+    ) -> Result<Self, ServerError> {
         // Start gpg-agent as a server.
         // Communication will be done via standard input/output.
         let orig_agent = match agent_path {
             Some(path) => path.to_owned(),
-            None => get_original_agent(homedir, gpgconf_path).context("Failed to get the original agent")?,
+            None => get_original_agent(homedir, gpgconf_path)
+                .context("Failed to get the original agent")?,
         };
 
         let mut command = Command::new(orig_agent);
-        command.args(["--homedir", homedir.as_os_str().to_str().expect("Cannot convert homedir path to os path")]);
+        command.args([
+            "--homedir",
+            homedir
+                .as_os_str()
+                .to_str()
+                .expect("Cannot convert homedir path to os path"),
+        ]);
         if use_std_socket {
             command.arg("--use-standard-socket");
         }
@@ -516,14 +594,21 @@ impl AssuanServer {
         #[cfg(windows)]
         command.creation_flags(CREATE_NO_WINDOW);
 
-        info!("Spawning {:?} {:?}", command.get_program(), command.get_args());
+        info!(
+            "Spawning {:?} {:?}",
+            command.get_program(),
+            command.get_args()
+        );
 
         let mut agent = command.spawn()?;
         let stdout = agent.stdout.take().unwrap();
         let stdin = agent.stdin.take().unwrap();
 
-        Ok(AssuanServer {agent: Arc::new(Mutex::new(agent)), reader: Arc::new(Mutex::new(BufReader::new(stdout))), writer: Arc::new(Mutex::new(BufWriter::new(stdin)))})
-
+        Ok(AssuanServer {
+            agent: Arc::new(Mutex::new(agent)),
+            reader: Arc::new(Mutex::new(BufReader::new(stdout))),
+            writer: Arc::new(Mutex::new(BufWriter::new(stdin))),
+        })
     }
 
     pub fn connect(&mut self) -> Result<(), ServerError> {
@@ -535,7 +620,7 @@ impl AssuanServer {
             other => {
                 error!("Connection to server failed: expected OK, got {:?}", other);
                 Err(ServerError::ConnectionFailed)
-            },
+            }
         }
     }
 
@@ -549,7 +634,7 @@ impl AssuanServer {
     }
 
     /// Receive a response from the server.
-    /// 
+    ///
     /// # Errors
     /// Return [`ServerError::Eof`] if the read returned nothing or
     /// [`ServerError::InvalidCommand(Vec<u8>)`] if the read command is not a valid UTF8 string or
@@ -579,24 +664,36 @@ impl AssuanServer {
 
         let (command, parameters) = buf.split_at(command_end);
 
-        let command = String::from_utf8(command.to_vec()).map_err(|_| ServerError::InvalidCommand(buf.clone()))?;
+        let command = String::from_utf8(command.to_vec())
+            .map_err(|_| ServerError::InvalidCommand(buf.clone()))?;
         // Remove space character at beginning
-        let parameters = if parameters.is_empty() {parameters} else {&parameters[1..]}; 
+        let parameters = if parameters.is_empty() {
+            parameters
+        } else {
+            &parameters[1..]
+        };
 
         match command.as_str() {
             "OK" => {
                 let param = String::from_utf8(parameters.to_vec()).unwrap_or_default();
-                Ok(AssuanResponse::Ok(if param.is_empty() {None} else {Some(param)}))
-            },
+                Ok(AssuanResponse::Ok(if param.is_empty() {
+                    None
+                } else {
+                    Some(param)
+                }))
+            }
             "ERR" => {
-                let code_end = parameters.iter().position(|b| *b == b' ').unwrap_or(parameters.len());
+                let code_end = parameters
+                    .iter()
+                    .position(|b| *b == b' ')
+                    .unwrap_or(parameters.len());
                 let code = String::from_utf8(parameters[..code_end].to_vec()).unwrap_or_default();
                 let description = if code_end == parameters.len() {
                     None
                 } else {
-                    Some(String::from_utf8(parameters[code_end+1..].to_vec()).unwrap_or_default())
+                    Some(String::from_utf8(parameters[code_end + 1..].to_vec()).unwrap_or_default())
                 };
-                
+
                 Ok(AssuanResponse::Err { code, description })
             }
             "D" => {
@@ -604,33 +701,48 @@ impl AssuanServer {
                 Ok(AssuanResponse::Data(data))
             }
             "S" => {
-                let keyword_end = parameters.iter().position(|b| *b == b' ').unwrap_or(parameters.len());
-                let keyword = String::from_utf8(parameters[..keyword_end].to_vec()).unwrap_or_default();
+                let keyword_end = parameters
+                    .iter()
+                    .position(|b| *b == b' ')
+                    .unwrap_or(parameters.len());
+                let keyword =
+                    String::from_utf8(parameters[..keyword_end].to_vec()).unwrap_or_default();
                 let info = if keyword_end == parameters.len() {
                     None
                 } else {
-                    Some(String::from_utf8(parameters[keyword_end+1..].to_vec()).unwrap_or_default())
+                    Some(
+                        String::from_utf8(parameters[keyword_end + 1..].to_vec())
+                            .unwrap_or_default(),
+                    )
                 };
                 Ok(AssuanResponse::Processing { keyword, info })
             }
             "INQUIRE" => {
-                let keyword_end = parameters.iter().position(|b| *b == b' ').unwrap_or(parameters.len());
-                let keyword = String::from_utf8(parameters[..keyword_end].to_vec()).unwrap_or_default();
+                let keyword_end = parameters
+                    .iter()
+                    .position(|b| *b == b' ')
+                    .unwrap_or(parameters.len());
+                let keyword =
+                    String::from_utf8(parameters[..keyword_end].to_vec()).unwrap_or_default();
                 let parameters = if keyword_end == parameters.len() {
                     None
                 } else {
-                    Some(String::from_utf8(parameters[keyword_end+1..].to_vec()).unwrap_or_default())
+                    Some(
+                        String::from_utf8(parameters[keyword_end + 1..].to_vec())
+                            .unwrap_or_default(),
+                    )
                 };
-                Ok(AssuanResponse::Inquire { keyword, parameters })
+                Ok(AssuanResponse::Inquire {
+                    keyword,
+                    parameters,
+                })
             }
-            _ => {
-                Ok(AssuanResponse::Unknown(buf))
-            }
+            _ => Ok(AssuanResponse::Unknown(buf)),
         }
     }
 
     /// Send a command to the server.
-    /// 
+    ///
     /// # Errors
     /// Return [`ServerError::IOError`] if the underlying operation failed.
     pub fn send(&mut self, data: AssuanCommand) -> Result<(), ServerError> {
@@ -639,17 +751,20 @@ impl AssuanServer {
         match data {
             AssuanCommand::Bye => {
                 writer.write_all(b"BYE\n")?;
-            },
+            }
             AssuanCommand::Reset => {
                 writer.write_all(b"RESET\n")?;
-            },
+            }
             AssuanCommand::End => {
                 writer.write_all(b"END\n")?;
-            },
+            }
             AssuanCommand::Help => {
                 writer.write_all(b"HELP\n")?;
-            },
-            AssuanCommand::Command { command, parameters } => {
+            }
+            AssuanCommand::Command {
+                command,
+                parameters,
+            } => {
                 let mut buf: Vec<u8> = Vec::new();
                 buf.extend_from_slice(command.as_bytes());
                 if let Some(param) = parameters {
@@ -659,13 +774,13 @@ impl AssuanServer {
                 buf = validate_line(buf);
                 buf.push(b'\n');
                 writer.write_all(&buf)?;
-            },
+            }
             AssuanCommand::Nop => {
                 writer.write_all(b"NOP\n")?;
-            },
+            }
             AssuanCommand::Quit => {
                 writer.write_all(b"QUIT\n")?;
-            },
+            }
             AssuanCommand::Option { name, value } => {
                 let mut buf: Vec<u8> = Vec::new();
                 buf.extend_from_slice(b"OPTION ");
@@ -678,20 +793,23 @@ impl AssuanServer {
                 buf.push(b'\n');
 
                 writer.write_all(&buf)?;
-            },
+            }
             AssuanCommand::Cancel => {
                 writer.write_all(b"CAN\n")?;
-            },
+            }
             AssuanCommand::Auth => {
                 writer.write_all(b"AUTH\n")?;
-            },
+            }
             AssuanCommand::Data(mut data) => {
-                data = data.iter().flat_map(|&b| {
-                    if b == b'%' || b == b'\n' || b == b'\r' {
-                        return format!("%{:02X}", b).as_bytes().to_vec();
-                    }
-                    vec![b]
-                }).collect();
+                data = data
+                    .iter()
+                    .flat_map(|&b| {
+                        if b == b'%' || b == b'\n' || b == b'\r' {
+                            return format!("%{:02X}", b).as_bytes().to_vec();
+                        }
+                        vec![b]
+                    })
+                    .collect();
 
                 for chunck in data.chunks(LINE_LENGHT - 3) {
                     let mut buf: Vec<u8> = Vec::from(b"D ".as_slice());
@@ -700,7 +818,7 @@ impl AssuanServer {
                     buf.push(b'\n');
                     writer.write_all(&buf)?;
                 }
-            },
+            }
         }
         writer.flush()?;
         Ok(())
@@ -716,12 +834,16 @@ impl AssuanServer {
 
 impl Clone for AssuanServer {
     fn clone(&self) -> Self {
-        Self { agent: self.agent.clone(), reader: self.reader.clone(), writer: self.writer.clone() }
+        Self {
+            agent: self.agent.clone(),
+            reader: self.reader.clone(),
+            writer: self.writer.clone(),
+        }
     }
 }
 
 /// Validate a line against the max length of an assuan message.
-/// 
+///
 /// Silently truncate the line if it exceeds the maximum length.
 fn validate_line(mut line: Vec<u8>) -> Vec<u8> {
     let mut end = line.iter().position(|b| *b == b'\n').unwrap_or(line.len());
@@ -731,26 +853,29 @@ fn validate_line(mut line: Vec<u8>) -> Vec<u8> {
 }
 
 /// Encode the given string with percent-encoding.
-/// 
+///
 /// Encode spaces (' '), new lines ('\n'), carriage return ('\r'), plus ('+') and percent ('%')
 pub fn encode_percent(str: &str) -> Vec<u8> {
-    str.as_bytes().iter().flat_map(|&b| {
-        if b == b'%' || b == b' ' || b == b'+' || b == b'\n' || b == b'\r' {
-            return format!("%{:02X}", b).as_bytes().to_vec();
-        }
-        vec![b]
-    }).collect()
+    str.as_bytes()
+        .iter()
+        .flat_map(|&b| {
+            if b == b'%' || b == b' ' || b == b'+' || b == b'\n' || b == b'\r' {
+                return format!("%{:02X}", b).as_bytes().to_vec();
+            }
+            vec![b]
+        })
+        .collect()
 }
 
 /// Decode a percent-encoded buffer.
-/// 
+///
 /// If the encoding is not valid return the raw bytes.
 pub fn decode_percent(data: &[u8]) -> Vec<u8> {
     let mut i = 0;
     let mut decoded = Vec::new();
     while i < data.len() {
         if data[i] == b'%' {
-            if let Ok(d) = hex::decode(&data[i+1..i+3]) {
+            if let Ok(d) = hex::decode(&data[i + 1..i + 3]) {
                 decoded.extend(d);
                 i += 3;
             } else {
@@ -766,37 +891,64 @@ pub fn decode_percent(data: &[u8]) -> Vec<u8> {
 }
 
 /// Return the path of the socket file, as provided by `gpgconf`.
-/// 
+///
 /// # Errors
 /// Return an [`std::io::Error`] if the call of `gpgconf` failed.
-/// 
+///
 /// # Panic
 /// Panic if the path is not UTF8-encoded.
-fn get_socket_file_path(homedir: &Path, gpgconf_path: Option<&Path>) -> Result<PathBuf, anyhow::Error> {
-
+fn get_socket_file_path(
+    homedir: &Path,
+    gpgconf_path: Option<&Path>,
+) -> Result<PathBuf, anyhow::Error> {
     let output = Command::new(gpgconf_path.unwrap_or(Path::new("gpgconf")))
-        .args(["--homedir", homedir.as_os_str().to_str().expect("Cannot convert homedir path to os path")])
+        .args([
+            "--homedir",
+            homedir
+                .as_os_str()
+                .to_str()
+                .expect("Cannot convert homedir path to os path"),
+        ])
         .args(["--list-dirs", "agent-socket"])
-        .output().context("Call to gpgconf failed")?;
-    let path = PathBuf::from(String::from_utf8(output.stdout).expect("Socket path is not UTF8").trim());
+        .output()
+        .context("Call to gpgconf failed")?;
+    let path = PathBuf::from(
+        String::from_utf8(output.stdout)
+            .expect("Socket path is not UTF8")
+            .trim(),
+    );
     Ok(path)
 }
 
 /// Return the path to the original `gpg-agent`, as provided by `gpgconf`.
-/// 
+///
 /// # Errors
 /// Return an [`std::io::Error`] if the call of `gpgconf` failed.
-/// 
+///
 /// # Panic
 /// Panic if the path is not UTF8-encoded.
-fn get_original_agent(homedir: &Path, gpgconf_path: Option<&Path>) -> Result<PathBuf, anyhow::Error> {
+fn get_original_agent(
+    homedir: &Path,
+    gpgconf_path: Option<&Path>,
+) -> Result<PathBuf, anyhow::Error> {
     let path = gpgconf_path.unwrap_or(Path::new("gpgconf"));
     let output = Command::new(path)
-        .args(["--homedir", homedir.as_os_str().to_str().expect("Cannot convert homedir path to os path")])
+        .args([
+            "--homedir",
+            homedir
+                .as_os_str()
+                .to_str()
+                .expect("Cannot convert homedir path to os path"),
+        ])
         .args(["--list-dirs", "bindir"])
-        .output().context(format!("Call to gpgconf ({:?}) failed", path))?;
+        .output()
+        .context(format!("Call to gpgconf ({:?}) failed", path))?;
 
-    let mut path = PathBuf::from(String::from_utf8(output.stdout).expect("Agent path is not UTF8").trim());
+    let mut path = PathBuf::from(
+        String::from_utf8(output.stdout)
+            .expect("Agent path is not UTF8")
+            .trim(),
+    );
     path.push("gpg-agent");
     if cfg!(target_os = "windows") {
         path.set_extension("exe");

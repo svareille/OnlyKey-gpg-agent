@@ -1,18 +1,31 @@
-use std::{time::Duration, path::PathBuf, sync::{Mutex, Arc}};
+use std::{
+    path::PathBuf,
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 
-use log::{trace, debug, info, error, warn};
-use anyhow::{Result, bail};
-use thiserror::Error;
+use anyhow::{bail, Result};
+use log::{debug, error, info, trace, warn};
 use num::FromPrimitive;
 use num_derive::FromPrimitive;
+use thiserror::Error;
 
-use crate::{assuan::{AssuanClient, AssuanServer, AssuanCommand, AssuanResponse, self, ServerError, ClientError}, csexp::Sexp};
+use crate::{
+    assuan::{
+        self, AssuanClient, AssuanCommand, AssuanResponse, AssuanServer, ClientError, ServerError,
+    },
+    csexp::Sexp,
+};
 
-use ok_gpg_agent::config::{Settings, KeyInfo, KeyType};
+use ok_gpg_agent::config::{KeyInfo, KeyType, Settings};
 
 use ok_gpg_agent::onlykey::{OnlyKey, OnlyKeyError};
 
-pub fn handle_client(mut client: AssuanClient, mut server: AssuanServer, my_agent: Arc<Mutex<MyAgent>>) -> Result<bool> {
+pub fn handle_client(
+    mut client: AssuanClient,
+    mut server: AssuanServer,
+    my_agent: Arc<Mutex<MyAgent>>,
+) -> Result<bool> {
     loop {
         trace!("[handle_client] Reading client");
         match client.recv()? {
@@ -24,34 +37,54 @@ pub fn handle_client(mut client: AssuanClient, mut server: AssuanServer, my_agen
                 info!("Client asked for reset. Sending to agent.");
                 my_agent.lock().unwrap().reset();
                 server.send(AssuanCommand::Reset)?;
-            },
-            AssuanCommand::Command { command, parameters } => match command.as_ref() {
+            }
+            AssuanCommand::Command {
+                command,
+                parameters,
+            } => match command.as_ref() {
                 "KILLAGENT" => {
                     info!("Client asked to kill the agent");
-                    server.send(AssuanCommand::Command { command, parameters})?;
+                    server.send(AssuanCommand::Command {
+                        command,
+                        parameters,
+                    })?;
                     return Ok(true);
                 }
                 "HAVEKEY" => {
                     debug!("HAVEKEY command received: {:?}", parameters);
-                    if let Some(str) = parameters.as_ref().and_then(|data| String::from_utf8(data.clone()).ok()){
+                    if let Some(str) = parameters
+                        .as_ref()
+                        .and_then(|data| String::from_utf8(data.clone()).ok())
+                    {
                         debug!("Parameter: {}", str);
                     }
                     let mut processed = false;
                     if my_agent.lock().unwrap().check_ready() {
-                        if let Some(param) = parameters.as_ref().and_then(|param| String::from_utf8(param.clone()).ok()) {
+                        if let Some(param) = parameters
+                            .as_ref()
+                            .and_then(|param| String::from_utf8(param.clone()).ok())
+                        {
                             if param.starts_with("--list") {
                                 trace!("Client asked the list of known secret keys");
                                 let keygrips = my_agent.lock().unwrap().get_known_keygrips();
                                 if !keygrips.is_empty() {
-                                    let keygrips: Vec<u8> = keygrips.iter().flat_map(|grip| hex::decode(grip).unwrap_or_else(|_|{
-                                        error!("A keygrip is not hex encoded.");
-                                        Vec::new()
-                                    })).collect();
+                                    let keygrips: Vec<u8> = keygrips
+                                        .iter()
+                                        .flat_map(|grip| {
+                                            hex::decode(grip).unwrap_or_else(|_| {
+                                                error!("A keygrip is not hex encoded.");
+                                                Vec::new()
+                                            })
+                                        })
+                                        .collect();
                                     client.send(crate::assuan::AssuanResponse::Data(keygrips))?;
                                 }
                             } else {
                                 trace!("Client asked for specific secret keys");
-                                if param.split_ascii_whitespace().any(|grip| my_agent.lock().unwrap().have_key(grip)) {
+                                if param
+                                    .split_ascii_whitespace()
+                                    .any(|grip| my_agent.lock().unwrap().have_key(grip))
+                                {
                                     client.send_ok("")?;
                                     processed = true;
                                 }
@@ -59,19 +92,31 @@ pub fn handle_client(mut client: AssuanClient, mut server: AssuanServer, my_agen
                         }
                     }
                     if !processed {
-                        server.send(AssuanCommand::Command { command, parameters})?;
+                        server.send(AssuanCommand::Command {
+                            command,
+                            parameters,
+                        })?;
                     }
                 }
                 "KEYINFO" => {
                     debug!("KEYINFO command received: {:?}", parameters);
-                    if let Some(str) = parameters.as_ref().and_then(|data| String::from_utf8(data.clone()).ok()){
+                    if let Some(str) = parameters
+                        .as_ref()
+                        .and_then(|data| String::from_utf8(data.clone()).ok())
+                    {
                         debug!("Parameter: {}", str);
                     }
                     let mut processed = false;
                     if my_agent.lock().unwrap().check_ready() {
-                        if let Some(param) = parameters.as_ref().and_then(|param| String::from_utf8(param.clone()).ok()) {
-
-                            fn send_keyinfo(client: &mut AssuanClient, keygrip: &str, data: bool) -> Result<()> {
+                        if let Some(param) = parameters
+                            .as_ref()
+                            .and_then(|param| String::from_utf8(param.clone()).ok())
+                        {
+                            fn send_keyinfo(
+                                client: &mut AssuanClient,
+                                keygrip: &str,
+                                data: bool,
+                            ) -> Result<()> {
                                 // Idea: get the slot label from OnlyKey as the IDSTR parameter
                                 let response = format!("{} T ONLYKEY - - C - - -", keygrip);
                                 debug!("Sending '{}' to client", response);
@@ -79,36 +124,57 @@ pub fn handle_client(mut client: AssuanClient, mut server: AssuanServer, my_agen
                                     client.send(AssuanResponse::Data(response.into_bytes()))?;
                                 } else {
                                     client.send(AssuanResponse::Processing {
-                                        keyword: "KEYINFO".to_owned(), info: Some(response) })?;
+                                        keyword: "KEYINFO".to_owned(),
+                                        info: Some(response),
+                                    })?;
                                 }
                                 Ok(())
                             }
 
-                            let key_info_cmd = KeyInfoCommand::parse(param.split_ascii_whitespace());
+                            let key_info_cmd =
+                                KeyInfoCommand::parse(param.split_ascii_whitespace());
                             if key_info_cmd.list {
                                 for keygrip in my_agent.lock().unwrap().get_known_keygrips() {
                                     send_keyinfo(&mut client, &keygrip, key_info_cmd.data)?;
                                 }
                             } else if key_info_cmd.ssh_list {
                                 // Do nothing, let the underlying agent handle this
-                            } else if my_agent.lock().unwrap().get_known_keygrips().contains(&key_info_cmd.keygrip) {
-                                send_keyinfo(&mut client, &key_info_cmd.keygrip, key_info_cmd.data)?;
+                            } else if my_agent
+                                .lock()
+                                .unwrap()
+                                .get_known_keygrips()
+                                .contains(&key_info_cmd.keygrip)
+                            {
+                                send_keyinfo(
+                                    &mut client,
+                                    &key_info_cmd.keygrip,
+                                    key_info_cmd.data,
+                                )?;
                                 client.send_ok("")?;
                                 processed = true;
                             }
                         }
                     }
                     if !processed {
-                        server.send(AssuanCommand::Command { command, parameters})?;
+                        server.send(AssuanCommand::Command {
+                            command,
+                            parameters,
+                        })?;
                     }
-                },
+                }
                 "SIGKEY" | "SETKEY" => {
                     debug!("{} command received: {:?}", command, parameters);
-                    if let Some(str) = parameters.as_ref().and_then(|data| String::from_utf8(data.clone()).ok()){
+                    if let Some(str) = parameters
+                        .as_ref()
+                        .and_then(|data| String::from_utf8(data.clone()).ok())
+                    {
                         debug!("Parameter: {}", str);
                     }
                     let mut processed = false;
-                    if let Some(keygrip) = parameters.as_ref().and_then(|param| String::from_utf8(param.clone()).ok()) {
+                    if let Some(keygrip) = parameters
+                        .as_ref()
+                        .and_then(|param| String::from_utf8(param.clone()).ok())
+                    {
                         let mut my_agent = my_agent.lock().unwrap();
                         if my_agent.select_key(&keygrip) && my_agent.check_ready() {
                             // We have the corresponding private key and the OnlyKey is ready to process things
@@ -118,40 +184,64 @@ pub fn handle_client(mut client: AssuanClient, mut server: AssuanServer, my_agen
                         }
                     }
                     if !processed {
-                        server.send(AssuanCommand::Command { command, parameters})?;
+                        server.send(AssuanCommand::Command {
+                            command,
+                            parameters,
+                        })?;
                     }
-                },
+                }
                 "SETKEYDESC" => {
                     debug!("SETKEYDESC command received");
-                    if let Some(str) = parameters.as_ref().and_then(|data| String::from_utf8(data.clone()).ok()){
+                    if let Some(str) = parameters
+                        .as_ref()
+                        .and_then(|data| String::from_utf8(data.clone()).ok())
+                    {
                         debug!("Parameter: {}", str);
                     }
-                    server.send(AssuanCommand::Command { command, parameters})?;
+                    server.send(AssuanCommand::Command {
+                        command,
+                        parameters,
+                    })?;
                     trace!("Key desc sent to server");
                 }
                 "SETHASH" => {
                     debug!("SETHASH command received: {:?}", parameters);
-                    if let Some(str) = parameters.as_ref().and_then(|data| String::from_utf8(data.clone()).ok()){
+                    if let Some(str) = parameters
+                        .as_ref()
+                        .and_then(|data| String::from_utf8(data.clone()).ok())
+                    {
                         debug!("Parameter: {}", str);
                     }
                     let mut my_agent = my_agent.lock().unwrap();
-                    if let Some(param) = parameters.as_ref().and_then(|param| String::from_utf8(param.clone()).ok()) {
+                    if let Some(param) = parameters
+                        .as_ref()
+                        .and_then(|param| String::from_utf8(param.clone()).ok())
+                    {
                         let hash_data = HashData::parse(param.split_ascii_whitespace());
                         my_agent.data_to_sign = Some(hash_data);
                     }
                     // Send to gpg-agent anyway, in case we can't process the hash later
-                    server.send(AssuanCommand::Command { command, parameters})?;
+                    server.send(AssuanCommand::Command {
+                        command,
+                        parameters,
+                    })?;
                 }
                 "PKSIGN" => {
                     debug!("PKSIGN command received: {:?}", parameters);
-                    if let Some(str) = parameters.as_ref().and_then(|data| String::from_utf8(data.clone()).ok()){
+                    if let Some(str) = parameters
+                        .as_ref()
+                        .and_then(|data| String::from_utf8(data.clone()).ok())
+                    {
                         debug!("Parameter: {}", str);
                     }
                     let mut my_agent = my_agent.lock().unwrap();
                     let mut processed = false;
                     if my_agent.key.is_some() && my_agent.check_ready() {
                         if my_agent.data_to_sign.is_none() {
-                            client.send(AssuanResponse::Inquire { keyword: "HASHVAL".to_owned(), parameters: None })?;
+                            client.send(AssuanResponse::Inquire {
+                                keyword: "HASHVAL".to_owned(),
+                                parameters: None,
+                            })?;
                         } else {
                             debug!("Signing data");
                             /*server.send(AssuanCommand::Command { command: command.clone(), parameters: parameters.clone()})?;*/
@@ -160,28 +250,37 @@ pub fn handle_client(mut client: AssuanClient, mut server: AssuanServer, my_agen
                                     debug!("Sending signature");
                                     client.send(AssuanResponse::Data(sig.to_vec()))?;
                                     client.send_ok("")?;
-                                },
+                                }
                                 Err(e) => {
                                     error!("Could not sign data: {}", e);
 
                                     let code = match e {
                                         AgentError::OnlyKeyError(OnlyKeyError::WrongChallenge) => {
                                             Some(GpgError::GPG_ERR_BAD_PIN)
-                                        },
+                                        }
                                         AgentError::OnlyKeyError(OnlyKeyError::Timeout) => {
                                             Some(GpgError::GPG_ERR_TIMEOUT)
                                         }
-                                        _ => {
-                                            None
-                                        }
+                                        _ => None,
                                     };
                                     if let Some(code) = code {
                                         client.send_err(
                                             &code.gpg_error().to_string(),
-                                            Some(&format!("{} <{}>", code.as_string(), GpgErrorSource::default().as_string()))
+                                            Some(&format!(
+                                                "{} <{}>",
+                                                code.as_string(),
+                                                GpgErrorSource::default().as_string()
+                                            )),
                                         )?;
                                     } else {
-                                        client.send_err(&GpgError::GPG_ERR_INTERNAL.gpg_error().to_string(), Some(&format!("Could not sign the data: {:?} <{}>", e, GpgErrorSource::default().as_string())))?;
+                                        client.send_err(
+                                            &GpgError::GPG_ERR_INTERNAL.gpg_error().to_string(),
+                                            Some(&format!(
+                                                "Could not sign the data: {:?} <{}>",
+                                                e,
+                                                GpgErrorSource::default().as_string()
+                                            )),
+                                        )?;
                                     }
                                 }
                             }
@@ -189,12 +288,18 @@ pub fn handle_client(mut client: AssuanClient, mut server: AssuanServer, my_agen
                         processed = true;
                     }
                     if !processed {
-                        server.send(AssuanCommand::Command { command, parameters})?;
+                        server.send(AssuanCommand::Command {
+                            command,
+                            parameters,
+                        })?;
                     }
                 }
                 "PKDECRYPT" => {
                     debug!("PKDECRYPT command received: {:?}", parameters);
-                    if let Some(str) = parameters.as_ref().and_then(|data| String::from_utf8(data.clone()).ok()){
+                    if let Some(str) = parameters
+                        .as_ref()
+                        .and_then(|data| String::from_utf8(data.clone()).ok())
+                    {
                         debug!("Parameter: {}", str);
                     }
                     let mut my_agent = my_agent.lock().unwrap();
@@ -207,8 +312,9 @@ pub fn handle_client(mut client: AssuanClient, mut server: AssuanServer, my_agen
                     if my_agent.key.is_some() && my_agent.check_ready() {
                         client.send(AssuanResponse::Processing {
                             keyword: "INQUIRE_MAXLEN".to_owned(),
-                            info: Some("4096".to_owned()) })?;
-                        match client.inquire("CIPHERTEXT".to_owned(), None ) {
+                            info: Some("4096".to_owned()),
+                        })?;
+                        match client.inquire("CIPHERTEXT".to_owned(), None) {
                             Ok(data) => {
                                 //Got data to decrypt
                                 //server.send_data(data.clone())?;
@@ -217,37 +323,49 @@ pub fn handle_client(mut client: AssuanClient, mut server: AssuanServer, my_agen
                                         debug!("Sending decrypted data");
                                         client.send(AssuanResponse::Data(decrypted.to_vec()))?;
                                         client.send_ok("")?;
-                                    },
+                                    }
                                     Err(e) => {
                                         error!("Could not decrypt data: {}", e);
-    
+
                                         let code = match e {
-                                            AgentError::OnlyKeyError(OnlyKeyError::WrongChallenge) => {
-                                                Some(GpgError::GPG_ERR_BAD_PIN)
-                                            },
+                                            AgentError::OnlyKeyError(
+                                                OnlyKeyError::WrongChallenge,
+                                            ) => Some(GpgError::GPG_ERR_BAD_PIN),
                                             AgentError::OnlyKeyError(OnlyKeyError::Timeout) => {
                                                 Some(GpgError::GPG_ERR_TIMEOUT)
                                             }
-                                            _ => {
-                                                None
-                                            }
+                                            _ => None,
                                         };
                                         if let Some(code) = code {
                                             client.send_err(
                                                 &code.gpg_error().to_string(),
-                                                Some(&format!("{} <{}>", code.as_string(), GpgErrorSource::default().as_string()))
+                                                Some(&format!(
+                                                    "{} <{}>",
+                                                    code.as_string(),
+                                                    GpgErrorSource::default().as_string()
+                                                )),
                                             )?;
                                         } else {
-                                            client.send_err(&GpgError::GPG_ERR_INTERNAL.gpg_error().to_string(), Some(&format!("Could not decrypt the data: {:?} <{}>", e, GpgErrorSource::default().as_string())))?;
+                                            client.send_err(
+                                                &GpgError::GPG_ERR_INTERNAL.gpg_error().to_string(),
+                                                Some(&format!(
+                                                    "Could not decrypt the data: {:?} <{}>",
+                                                    e,
+                                                    GpgErrorSource::default().as_string()
+                                                )),
+                                            )?;
                                         }
                                     }
                                 }
-                            },
+                            }
                             Err(ClientError::Canceled) => {
                                 warn!("Client canceled the decryption operation.");
                             }
                             Err(ClientError::UnexpectedCommand(cmd)) => {
-                                warn!("Got unexpected command {:?} while processing decryption data", cmd);
+                                warn!(
+                                    "Got unexpected command {:?} while processing decryption data",
+                                    cmd
+                                );
                             }
                             Err(e) => {
                                 bail!(e);
@@ -256,22 +374,31 @@ pub fn handle_client(mut client: AssuanClient, mut server: AssuanServer, my_agen
                         processed = true;
                     }
                     if !processed {
-                        server.send(AssuanCommand::Command { command, parameters})?;
+                        server.send(AssuanCommand::Command {
+                            command,
+                            parameters,
+                        })?;
                     }
                 }
                 _ => {
                     debug!("Got command: Command {{{}, {:?}}} ", command, parameters);
-                    if let Some(str) = parameters.as_ref().and_then(|data| String::from_utf8(data.clone()).ok()){
+                    if let Some(str) = parameters
+                        .as_ref()
+                        .and_then(|data| String::from_utf8(data.clone()).ok())
+                    {
                         debug!("Parameter: {}", str);
                     }
-                    
-                    server.send(AssuanCommand::Command { command, parameters})?;
+
+                    server.send(AssuanCommand::Command {
+                        command,
+                        parameters,
+                    })?;
                 }
-            }
+            },
             cmd => {
                 debug!("Got command: {:?}", cmd);
                 server.send(cmd)?;
-            },
+            }
         }
     }
 
@@ -326,7 +453,6 @@ impl GpgErrorSource {
             GpgErrorSource::GPG_ERR_SOURCE_GPGAGENT => "GPG Agent".to_owned(),
             GpgErrorSource::GPG_ERR_SOURCE_ANY => "Any source".to_owned(),
             GpgErrorSource::GPG_ERR_SOURCE_OK_AGENT => "OnlyKey Agent".to_owned(),
-
         }
     }
 }
@@ -368,8 +494,20 @@ pub struct MyAgent {
 }
 
 impl MyAgent {
-    pub fn new(config_file: PathBuf, settings: Settings, srf: Arc<Mutex<Vec<ServerResponseFilter>>>) -> Self {
-        MyAgent { onlykey: None, server: None, config_file, settings, key: None, srf, data_to_sign: None}
+    pub fn new(
+        config_file: PathBuf,
+        settings: Settings,
+        srf: Arc<Mutex<Vec<ServerResponseFilter>>>,
+    ) -> Self {
+        MyAgent {
+            onlykey: None,
+            server: None,
+            config_file,
+            settings,
+            key: None,
+            srf,
+            data_to_sign: None,
+        }
     }
 
     pub fn reset(&mut self) {
@@ -379,7 +517,7 @@ impl MyAgent {
     }
 
     /// Try to connect to an OnlyKey.
-    /// 
+    ///
     /// # Error
     /// Return [`AgentError::OnlyKeyConnectionFailed`] if the connection to a device failed.
     pub fn try_connect_device(&mut self) -> Result<(), AgentError> {
@@ -388,7 +526,7 @@ impl MyAgent {
     }
 
     /// Logically disconnect the connected OnlyKey if relevant.
-    /// 
+    ///
     /// After a call to this function, any program should be able to claim a handle on the connected
     /// OnlyKey.
     pub fn disconnect_device(&mut self) {
@@ -419,41 +557,59 @@ impl MyAgent {
                     self.onlykey = None;
                     false
                 } else {
-                    debug!("The plugged key is {}", if ok.unlocked {"unlocked"} else {"locked"});
+                    debug!(
+                        "The plugged key is {}",
+                        if ok.unlocked { "unlocked" } else { "locked" }
+                    );
                     ok.unlocked
                 }
-            },
+            }
             None => {
                 debug!("No key plugged on last check. Checking again.");
-                if let Err(e) =  self.try_connect_device() {
+                if let Err(e) = self.try_connect_device() {
                     error!("Problem connecting to device: {:?}", e);
                     return false;
                 }
                 if let Some(ok) = &self.onlykey {
                     let ok = ok.lock().unwrap();
-                    debug!("The plugged key is {}", if ok.unlocked {"unlocked"} else {"locked"});
+                    debug!(
+                        "The plugged key is {}",
+                        if ok.unlocked { "unlocked" } else { "locked" }
+                    );
                     return ok.unlocked;
                 } else {
                     debug!("No key plugged");
                 }
                 false
-            },
+            }
         }
     }
 
     pub fn get_known_keygrips(&self) -> Vec<String> {
-        self.settings.keyinfo.iter().map(|info| info.keygrip()).collect()
+        self.settings
+            .keyinfo
+            .iter()
+            .map(|info| info.keygrip())
+            .collect()
     }
 
     pub fn have_key(&self, keygrip: &str) -> bool {
-        self.settings.keyinfo.iter().any(|info| info.keygrip() == keygrip)
+        self.settings
+            .keyinfo
+            .iter()
+            .any(|info| info.keygrip() == keygrip)
     }
 
     /// Select the key for future operations.
     /// Returns `true` if the key exists, `false` otherwise.
-    /// 
+    ///
     pub fn select_key(&mut self, keygrip: &str) -> bool {
-        if let Some(info) = self.settings.keyinfo.iter().find(|info| info.keygrip() == keygrip) {
+        if let Some(info) = self
+            .settings
+            .keyinfo
+            .iter()
+            .find(|info| info.keygrip() == keygrip)
+        {
             self.key = Some(info.clone());
             return true;
         }
@@ -482,10 +638,14 @@ impl MyAgent {
                                 error!("Signature length is {}, expected 64", signature.len());
                                 return Err(AgentError::InvalidSignatureLength(signature.len()));
                             }
-                        },
+                        }
                         KeyType::Rsa(size) => {
-                            if signature.len() != size/8 {
-                                error!("Signature length is {}, expected {}", signature.len(), size/8);
+                            if signature.len() != size / 8 {
+                                error!(
+                                    "Signature length is {}, expected {}",
+                                    signature.len(),
+                                    size / 8
+                                );
                                 debug!("Signature: {:?}", signature);
                                 return Err(AgentError::InvalidSignatureLength(signature.len()));
                             }
@@ -493,34 +653,30 @@ impl MyAgent {
                     }
 
                     let sexp = match sign_key.r#type() {
-                        KeyType::Ecc(_) => {
+                        KeyType::Ecc(_) => Sexp::List(vec![
+                            Sexp::Atom(b"sig-val".to_vec()),
                             Sexp::List(vec![
-                                Sexp::Atom(b"sig-val".to_vec()),
+                                Sexp::Atom(b"ecdsa".to_vec()),
                                 Sexp::List(vec![
-                                    Sexp::Atom(b"ecdsa".to_vec()),
-                                    Sexp::List(vec![
-                                        Sexp::Atom(b"r".to_vec()),
-                                        Sexp::Atom(signature[..32].to_vec()),
-                                    ]),
-                                    Sexp::List(vec![
-                                        Sexp::Atom(b"s".to_vec()),
-                                        Sexp::Atom(signature[32..].to_vec()),
-                                    ]),
+                                    Sexp::Atom(b"r".to_vec()),
+                                    Sexp::Atom(signature[..32].to_vec()),
                                 ]),
-                            ])
-                        },
-                        KeyType::Rsa(_) => {
+                                Sexp::List(vec![
+                                    Sexp::Atom(b"s".to_vec()),
+                                    Sexp::Atom(signature[32..].to_vec()),
+                                ]),
+                            ]),
+                        ]),
+                        KeyType::Rsa(_) => Sexp::List(vec![
+                            Sexp::Atom(b"sig-val".to_vec()),
                             Sexp::List(vec![
-                                Sexp::Atom(b"sig-val".to_vec()),
+                                Sexp::Atom(b"rsa".to_vec()),
                                 Sexp::List(vec![
-                                    Sexp::Atom(b"rsa".to_vec()),
-                                    Sexp::List(vec![
-                                        Sexp::Atom(b"s".to_vec()),
-                                        Sexp::Atom(signature.to_vec()),
-                                    ]),
+                                    Sexp::Atom(b"s".to_vec()),
+                                    Sexp::Atom(signature.to_vec()),
                                 ]),
-                            ])
-                        },
+                            ]),
+                        ]),
                     };
 
                     debug!("Signature S-Exp: {:?}", sexp);
@@ -542,21 +698,14 @@ impl MyAgent {
             if let Some(ok) = self.onlykey.clone() {
                 debug!("Data to decrypt: {:?}", data);
                 let ciphertext = match key.r#type() {
-                    KeyType::Ecc(_) => {
-                        parse_ecdh(&data).map_err(|_| AgentError::Other)?
-                    },
-                    KeyType::Rsa(_) => {
-                        parse_rsa(&data).map_err(|_| AgentError::Other)?
-                    },
+                    KeyType::Ecc(_) => parse_ecdh(&data).map_err(|_| AgentError::Other)?,
+                    KeyType::Rsa(_) => parse_rsa(&data).map_err(|_| AgentError::Other)?,
                 };
                 self.display_challenge(&ciphertext)?;
 
                 let plaintext = ok.lock().unwrap().decrypt(&ciphertext, &key)?;
 
-                let sexp = Sexp::List(vec![
-                    Sexp::Atom(b"value".to_vec()),
-                    Sexp::Atom(plaintext),
-                ]);
+                let sexp = Sexp::List(vec![Sexp::Atom(b"value".to_vec()), Sexp::Atom(plaintext)]);
 
                 debug!("Decrypted S-Exp: {:?}", sexp);
 
@@ -571,20 +720,31 @@ impl MyAgent {
 
     fn display_challenge(&mut self, data: &[u8]) -> Result<(), AgentError> {
         let (b1, b2, b3) = OnlyKey::compute_challenge(data);
-        let challenge_str = format!("Enter the 3 digit challenge code on OnlyKey to authorize operation:\n{} {} {}", b1, b2, b3);
+        let challenge_str = format!(
+            "Enter the 3 digit challenge code on OnlyKey to authorize operation:\n{} {} {}",
+            b1, b2, b3
+        );
         if self.settings.challenge {
             info!("{}", challenge_str);
             if let Some(server) = &mut self.server {
                 // Display challenge with original gpg-agent
                 self.srf.lock().unwrap().push(ServerResponseFilter::OkOrErr);
-                self.srf.lock().unwrap().push(ServerResponseFilter::CancelInquire);
+                self.srf
+                    .lock()
+                    .unwrap()
+                    .push(ServerResponseFilter::CancelInquire);
                 let challenge_str = assuan::encode_percent(&challenge_str);
-                server.send(AssuanCommand::Command { command: "GET_CONFIRMATION".to_owned(), parameters: Some(challenge_str) }).map_err(|e| {
-                    if let ServerError::IOError(io) = e {
-                        return AgentError::IOError(io);
-                    }
-                    AgentError::Other
-                })?;
+                server
+                    .send(AssuanCommand::Command {
+                        command: "GET_CONFIRMATION".to_owned(),
+                        parameters: Some(challenge_str),
+                    })
+                    .map_err(|e| {
+                        if let ServerError::IOError(io) = e {
+                            return AgentError::IOError(io);
+                        }
+                        AgentError::Other
+                    })?;
             }
         }
         Ok(())
@@ -613,7 +773,7 @@ pub fn parse_ecdh(s: &[u8]) -> Result<Vec<u8>, ()> {
                 }
             }
             Err(())
-        },
+        }
         Err(e) => {
             warn!("Could not parse Sexp: {:?}", e);
             Err(())
@@ -643,7 +803,7 @@ pub fn parse_rsa(s: &[u8]) -> Result<Vec<u8>, ()> {
                 }
             }
             Err(())
-        },
+        }
         Err(e) => {
             warn!("Could not parse Sexp: {:?}", e);
             Err(())
@@ -690,13 +850,19 @@ impl KeyInfoCommand {
                 }
             }
         }
-        KeyInfoCommand {list, ssh_list, data, with_ssh, ssh_fpr, keygrip}
+        KeyInfoCommand {
+            list,
+            ssh_list,
+            data,
+            with_ssh,
+            ssh_fpr,
+            keygrip,
+        }
     }
 }
 
 #[allow(dead_code)]
-#[derive(Debug)]
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 struct HashData {
     algo: Option<Hash>,
     inquire: bool,
@@ -733,7 +899,6 @@ impl HashData {
                             _ => None,
                         };
                     } else if let Some(next) = itr.next() {
-                        
                         algo = FromPrimitive::from_i16(item.parse().unwrap_or(0));
                         data = hex::decode(next.as_ref()).unwrap_or_default();
                     } else {
@@ -742,7 +907,12 @@ impl HashData {
                 }
             }
         }
-        Self {algo, inquire, pss, data}
+        Self {
+            algo,
+            inquire,
+            pss,
+            data,
+        }
     }
 }
 
@@ -754,47 +924,46 @@ pub enum ServerResponseFilter {
     Inquire,
 }
 
-#[derive(Debug)]
-#[derive(FromPrimitive, Clone)]
+#[derive(Debug, FromPrimitive, Clone)]
 enum Hash {
-    MD5           = 1,
-    SHA1          = 2,
-    RMD160        = 3,
-    MD2           = 5,
-    Tiger         = 6,
-    Haval         = 7,
-    SHA256        = 8,
-    SHA384        = 9,
-    SHA512        = 10,
-    SHA224        = 11,
-    MD4           = 301,
-    CRC32         = 302,
-    Crc32Rfc1510  = 303,
-    Crc24Rfc2440  = 304,
-    Whirlpool     = 305,
-    TIGER1        = 306, /* TIGER fixed.  */
-    TIGER2        = 307, /* TIGER2 variant.   */
-    GOSTR3411_94  = 308, /* GOST R 34.11-94.  */
-    STRIBOG256    = 309, /* GOST R 34.11-2012, 256 bit.  */
-    STRIBOG512    = 310, /* GOST R 34.11-2012, 512 bit.  */
-    Gostr3411Cp   = 311, /* GOST R 34.11-94 with CryptoPro-A S-Box.  */
-    SHA3_224      = 312,
-    SHA3_256      = 313,
-    SHA3_384      = 314,
-    SHA3_512      = 315,
-    SHAKE128      = 316,
-    SHAKE256      = 317,
-    Blake2b512    = 318,
-    Blake2b384    = 319,
-    Blake2b256    = 320,
-    Blake2b160    = 321,
-    Blake2s256    = 322,
-    Blake2s224    = 323,
-    Blake2s160    = 324,
-    Blake2s128    = 325,
-    SM3           = 326,
-    SHA512_256    = 327,
-    SHA512_224    = 328,
+    MD5 = 1,
+    SHA1 = 2,
+    RMD160 = 3,
+    MD2 = 5,
+    Tiger = 6,
+    Haval = 7,
+    SHA256 = 8,
+    SHA384 = 9,
+    SHA512 = 10,
+    SHA224 = 11,
+    MD4 = 301,
+    CRC32 = 302,
+    Crc32Rfc1510 = 303,
+    Crc24Rfc2440 = 304,
+    Whirlpool = 305,
+    TIGER1 = 306,       /* TIGER fixed.  */
+    TIGER2 = 307,       /* TIGER2 variant.   */
+    GOSTR3411_94 = 308, /* GOST R 34.11-94.  */
+    STRIBOG256 = 309,   /* GOST R 34.11-2012, 256 bit.  */
+    STRIBOG512 = 310,   /* GOST R 34.11-2012, 512 bit.  */
+    Gostr3411Cp = 311,  /* GOST R 34.11-94 with CryptoPro-A S-Box.  */
+    SHA3_224 = 312,
+    SHA3_256 = 313,
+    SHA3_384 = 314,
+    SHA3_512 = 315,
+    SHAKE128 = 316,
+    SHAKE256 = 317,
+    Blake2b512 = 318,
+    Blake2b384 = 319,
+    Blake2b256 = 320,
+    Blake2b160 = 321,
+    Blake2s256 = 322,
+    Blake2s224 = 323,
+    Blake2s160 = 324,
+    Blake2s128 = 325,
+    SM3 = 326,
+    SHA512_256 = 327,
+    SHA512_224 = 328,
 
     TlsMd5Sha1,
 }

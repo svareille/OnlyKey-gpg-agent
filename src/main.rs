@@ -2,23 +2,35 @@
 //! The underlying `gpg-agent` is started in server mode, thus only accessible by the running
 //! instance of OnlyKey-gpg-agent
 
-use std::{path::PathBuf, thread, sync::{mpsc::{channel, Sender, Receiver}, Arc, Mutex, RwLock}};
+use std::{
+    path::PathBuf,
+    sync::{
+        mpsc::{channel, Receiver, Sender},
+        Arc, Mutex, RwLock,
+    },
+    thread,
+};
 
-use anyhow::{Result, bail, Context};
+use anyhow::{bail, Context, Result};
 use clap::Parser;
-use log::{info, debug, error, trace, warn};
+use log::{debug, error, info, trace, warn};
 
 #[cfg(not(windows))]
 use daemonize::Daemonize;
-use ok_gpg_agent::{utils, config::Settings};
+use ok_gpg_agent::{config::Settings, utils};
 
 #[macro_use]
 extern crate lazy_static;
 
-use crate::{assuan::{AssuanListener, AssuanCommand, AssuanClient, AssuanServer, AssuanResponse, ClientError}, agent::{handle_client, MyAgent, ServerResponseFilter}};
+use crate::{
+    agent::{handle_client, MyAgent, ServerResponseFilter},
+    assuan::{
+        AssuanClient, AssuanCommand, AssuanListener, AssuanResponse, AssuanServer, ClientError,
+    },
+};
 
-mod assuan;
 mod agent;
+mod assuan;
 mod csexp;
 
 #[derive(Parser, Debug)]
@@ -49,7 +61,7 @@ fn main() -> Result<()> {
 
     if let Err(e) = Args::try_parse() {
         match e.kind() {
-            clap::error::ErrorKind::DisplayVersion | clap::error::ErrorKind::DisplayHelp => {},
+            clap::error::ErrorKind::DisplayVersion | clap::error::ErrorKind::DisplayHelp => {}
             _ => error!("Failed to parse command line: {:?}", e),
         }
     }
@@ -73,14 +85,14 @@ fn main() -> Result<()> {
         match Settings::new(config_file.as_path()) {
             Ok(settings) => {
                 println!("Config file successfully read: \n{:#?}", settings);
-            },
+            }
             Err(e) => {
                 println!("Config file is invalid: {e:?}");
             }
         }
         return Ok(());
     }
-    
+
     info!("Agent started with arguments: {:?}", args);
 
     let homedir = match args.homedir.as_deref() {
@@ -116,24 +128,37 @@ fn main() -> Result<()> {
     let srf_1 = srf.clone();
     let mut my_agent = MyAgent::new(config_file, settings, srf_1);
 
-    let agent_path = if my_agent.settings.agent_program.as_os_str().is_empty() {None} else if my_agent.settings.agent_program.is_relative() {
+    let agent_path = if my_agent.settings.agent_program.as_os_str().is_empty() {
+        None
+    } else if my_agent.settings.agent_program.is_relative() {
         let current_exe = std::env::current_exe()?;
-        current_exe.parent().map(|p|p.join(&my_agent.settings.agent_program))
+        current_exe
+            .parent()
+            .map(|p| p.join(&my_agent.settings.agent_program))
     } else {
         Some(my_agent.settings.agent_program.clone())
     };
-    let gpgconf_path = if my_agent.settings.gpgconf.as_os_str().is_empty() {None} else if my_agent.settings.gpgconf.is_relative() {
+    let gpgconf_path = if my_agent.settings.gpgconf.as_os_str().is_empty() {
+        None
+    } else if my_agent.settings.gpgconf.is_relative() {
         let current_exe = std::env::current_exe()?;
-        current_exe.parent().map(|p|p.join(&my_agent.settings.gpgconf))
+        current_exe
+            .parent()
+            .map(|p| p.join(&my_agent.settings.gpgconf))
     } else {
         Some(my_agent.settings.gpgconf.clone())
     };
 
-    let mut server = AssuanServer::new(homedir.as_path(), gpgconf_path.as_deref(), args.use_standard_socket, agent_path.as_deref())
-        .map_err(|e| {
-            error!("Could not create assuan server: {:?}", e);
-            e
-        })?;
+    let mut server = AssuanServer::new(
+        homedir.as_path(),
+        gpgconf_path.as_deref(),
+        args.use_standard_socket,
+        agent_path.as_deref(),
+    )
+    .map_err(|e| {
+        error!("Could not create assuan server: {:?}", e);
+        e
+    })?;
     server.connect().map_err(|e| {
         error!("Could not connect to gpg-agent: {:?}", e);
         e
@@ -147,7 +172,7 @@ fn main() -> Result<()> {
     match server.recv() {
         Ok(AssuanResponse::Ok(_)) => {
             info!("Agent correctly responding");
-        },
+        }
         Ok(res) => {
             error!("Agent behave unexpectedly: expected OK, got {:#?}", res);
             panic!("The agent should have responded with OK, not {:?}", res);
@@ -164,7 +189,7 @@ fn main() -> Result<()> {
 
     let (sender, receiver) = channel();
     //let receiver = Arc::new(Mutex::new(receiver));
-    
+
     // Receive messages from server
     {
         info!("Handling server...");
@@ -190,7 +215,12 @@ fn main() -> Result<()> {
     }
 
     info!("Setup listener...");
-    let assuan_listener = AssuanListener::new(homedir.as_path(), gpgconf_path.as_deref(), my_agent.lock().unwrap().settings.delete_socket).map_err(|e| {
+    let assuan_listener = AssuanListener::new(
+        homedir.as_path(),
+        gpgconf_path.as_deref(),
+        my_agent.lock().unwrap().settings.delete_socket,
+    )
+    .map_err(|e| {
         error!("Couldn't setup the assuan listener: {:?}", e);
         e
     })?;
@@ -223,15 +253,15 @@ fn main() -> Result<()> {
         match handle_client(client, server.clone(), agent) {
             Ok(true) => {
                 break;
-            },
-            Ok(false) => {},
+            }
+            Ok(false) => {}
             Err(e) => {
-                if let Some(ClientError::Eof) =  e.downcast_ref::<ClientError>() {
+                if let Some(ClientError::Eof) = e.downcast_ref::<ClientError>() {
                     info!("Client disconnected");
                 } else {
                     warn!("Client handling stopped: {}", e);
                 }
-            },
+            }
         }
         // Disconnect OnlyKey
         my_agent.lock().unwrap().disconnect_device();
@@ -263,15 +293,15 @@ fn set_log_level(level: log::LevelFilter) {
                 *log = level;
                 Ok(format!("Log level changed to: {}", level))
             }
-            Err(err) => {
-                Err(format!("Failed to change log level to: {}, cause: {}", level, err))
-            }
+            Err(err) => Err(format!(
+                "Failed to change log level to: {}, cause: {}",
+                level, err
+            )),
         };
         match msg {
             Ok(msg) => info!("{}", msg),
             Err(msg) => warn!("{}", msg),
         }
-        
     }
 }
 
@@ -280,11 +310,9 @@ fn setup_logger() -> Result<(), fern::InitError> {
     use std::env;
 
     let mut logger = fern::Dispatch::new()
-        .filter(|metadata| {
-            match LOG_LEVEL.read() {
-                Ok(log) => metadata.level() <= *log,
-                Err(_err) => true,
-            }
+        .filter(|metadata| match LOG_LEVEL.read() {
+            Ok(log) => metadata.level() <= *log,
+            Err(_err) => true,
         })
         .format(|out, message, record| {
             out.finish(format_args!(
@@ -302,14 +330,21 @@ fn setup_logger() -> Result<(), fern::InitError> {
 
     let mut log_file = env::temp_dir();
     log_file.push("ok-gpg-agent.log");
-    if let Ok(log_file) = std::fs::OpenOptions::new().write(true).create(true).truncate(true).open(log_file) {
+    if let Ok(log_file) = std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .open(log_file)
+    {
         logger = logger.chain(log_file);
     } else {
-        logger = logger.chain(std::fs::OpenOptions::new()
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .open("ok-gpg-agent.log")?);
+        logger = logger.chain(
+            std::fs::OpenOptions::new()
+                .write(true)
+                .create(true)
+                .truncate(true)
+                .open("ok-gpg-agent.log")?,
+        );
     }
     logger.apply()?;
     Ok(())
@@ -317,16 +352,13 @@ fn setup_logger() -> Result<(), fern::InitError> {
 
 #[cfg(not(windows))]
 fn setup_logger() -> Result<(), fern::InitError> {
-
     let syslog_formatter = syslog::Formatter3164::default();
 
     let with_format = fern::Dispatch::new()
         //.level(level)
-        .filter(|metadata| {
-            match LOG_LEVEL.read() {
-                Ok(log) => metadata.level() <= *log,
-                Err(_err) => true,
-            }
+        .filter(|metadata| match LOG_LEVEL.read() {
+            Ok(log) => metadata.level() <= *log,
+            Err(_err) => true,
         })
         .format(|out, message, record| {
             out.finish(format_args!(
@@ -340,38 +372,32 @@ fn setup_logger() -> Result<(), fern::InitError> {
             ))
         });
 
-    let mut logger = fern::Dispatch::new()
-        .chain(
-            with_format
-                .chain(std::io::stdout())
-        );
+    let mut logger = fern::Dispatch::new().chain(with_format.chain(std::io::stdout()));
     if let Ok(syslog) = syslog::unix(syslog_formatter) {
         logger = logger.chain(
             fern::Dispatch::new()
-                .filter(|metadata| {
-                    match LOG_LEVEL.read() {
-                        Ok(log) => metadata.level() <= *log,
-                        Err(_err) => true,
-                    }
+                .filter(|metadata| match LOG_LEVEL.read() {
+                    Ok(log) => metadata.level() <= *log,
+                    Err(_err) => true,
                 })
                 //.level(level)
-                .chain(syslog)
+                .chain(syslog),
         );
     } else {
         logger = logger.chain(
             fern::Dispatch::new()
-                .filter(|metadata| {
-                    match LOG_LEVEL.read() {
-                        Ok(log) => metadata.level() <= *log,
-                        Err(_err) => true,
-                    }
+                .filter(|metadata| match LOG_LEVEL.read() {
+                    Ok(log) => metadata.level() <= *log,
+                    Err(_err) => true,
                 })
                 //.level(level)
-                .chain(std::fs::OpenOptions::new()
-                    .write(true)
-                    .create(true)
-                    .truncate(true)
-                    .open("/tmp/ok-gpg-agent.log")?)
+                .chain(
+                    std::fs::OpenOptions::new()
+                        .write(true)
+                        .create(true)
+                        .truncate(true)
+                        .open("/tmp/ok-gpg-agent.log")?,
+                ),
         );
     }
     logger.apply()?;
@@ -383,25 +409,25 @@ fn daemonize() -> Result<()> {
     info!("No daemonization on Windows, the process is already detached");
     Ok(())
 }
- 
+
 #[cfg(not(windows))]
 fn daemonize() -> Result<()> {
-    let daemonize = Daemonize::new()    // is optional, see `Daemonize` documentation
-            .working_directory("/tmp");
-        
-        match daemonize.start() {
-            Ok(_) => {
-                info!("Successfully daemonized");
-                Ok(())
-            },
-            Err(e) => {
-                error!("Could not daemonize: {:?}", e);
-                bail!(e)
-            },
+    let daemonize = Daemonize::new() // is optional, see `Daemonize` documentation
+        .working_directory("/tmp");
+
+    match daemonize.start() {
+        Ok(_) => {
+            info!("Successfully daemonized");
+            Ok(())
         }
+        Err(e) => {
+            error!("Could not daemonize: {:?}", e);
+            bail!(e)
+        }
+    }
 }
 
-fn handle_server(mut server: AssuanServer, client: Sender<AssuanResponse>) -> Result<()>{
+fn handle_server(mut server: AssuanServer, client: Sender<AssuanResponse>) -> Result<()> {
     trace!("[handle_server] Listening to server");
     loop {
         let data = server.recv()?;
@@ -410,56 +436,66 @@ fn handle_server(mut server: AssuanServer, client: Sender<AssuanResponse>) -> Re
     }
 }
 
-fn dispatch_to_client(receiver: Receiver<AssuanResponse>, client: Arc<Mutex<Option<AssuanClient>>>, mut server: AssuanServer, srf: Arc<Mutex<Vec<ServerResponseFilter>>>) -> Result<()> {
+fn dispatch_to_client(
+    receiver: Receiver<AssuanResponse>,
+    client: Arc<Mutex<Option<AssuanClient>>>,
+    mut server: AssuanServer,
+    srf: Arc<Mutex<Vec<ServerResponseFilter>>>,
+) -> Result<()> {
     while let Ok(data) = receiver.recv() {
         if let Some(client) = client.lock().unwrap().as_mut() {
             let mut srf = srf.lock().unwrap();
             match srf.last() {
-                Some(ServerResponseFilter::CancelInquire) => {
-                    match data {
-                        AssuanResponse::Inquire{ .. } => {
-                            debug!("Got Inquire from server, canceling it");
-                            srf.pop();
-                            server.send(AssuanCommand::Cancel)?;
-                            continue;
-                        },
-                        _ => {client.send(data)?;}
+                Some(ServerResponseFilter::CancelInquire) => match data {
+                    AssuanResponse::Inquire { .. } => {
+                        debug!("Got Inquire from server, canceling it");
+                        srf.pop();
+                        server.send(AssuanCommand::Cancel)?;
+                        continue;
+                    }
+                    _ => {
+                        client.send(data)?;
                     }
                 },
-                Some(ServerResponseFilter::OkOrErr) => {
-                    match data {
-                        AssuanResponse::Ok(_) | AssuanResponse::Err { .. } => {
-                            debug!("Got Ok or Err from server, ignoring it");
-                            srf.pop();
-                            continue;
-                        },
-                        _ => {client.send(data)?;}
+                Some(ServerResponseFilter::OkOrErr) => match data {
+                    AssuanResponse::Ok(_) | AssuanResponse::Err { .. } => {
+                        debug!("Got Ok or Err from server, ignoring it");
+                        srf.pop();
+                        continue;
+                    }
+                    _ => {
+                        client.send(data)?;
                     }
                 },
-                Some(ServerResponseFilter::Processing) => {
-                    match data {
-                        AssuanResponse::Processing { .. } => {
-                            debug!("Got Processing from server, ignoring");
-                            srf.pop();
-                            continue;
-                        },
-                        _ => {client.send(data)?;}
+                Some(ServerResponseFilter::Processing) => match data {
+                    AssuanResponse::Processing { .. } => {
+                        debug!("Got Processing from server, ignoring");
+                        srf.pop();
+                        continue;
+                    }
+                    _ => {
+                        client.send(data)?;
                     }
                 },
-                Some(ServerResponseFilter::Inquire) => {
-                    match data {
-                        AssuanResponse::Inquire{ .. } => {
-                            debug!("Got Inquire from server, ignoring");
-                            srf.pop();
-                            continue;
-                        },
-                        _ => {client.send(data)?;}
+                Some(ServerResponseFilter::Inquire) => match data {
+                    AssuanResponse::Inquire { .. } => {
+                        debug!("Got Inquire from server, ignoring");
+                        srf.pop();
+                        continue;
+                    }
+                    _ => {
+                        client.send(data)?;
                     }
                 },
-                None => {client.send(data)?;},
+                None => {
+                    client.send(data)?;
+                }
             }
         } else {
-            warn!("No client attached, yet message {:?} received from server", data);
+            warn!(
+                "No client attached, yet message {:?} received from server",
+                data
+            );
         }
     }
     Ok(())

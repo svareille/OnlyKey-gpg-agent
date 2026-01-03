@@ -24,7 +24,7 @@ impl Stream {
 
     pub fn try_clone(&self) -> std::io::Result<Self> {
         let stream = self.stream.try_clone()?;
-        Ok(Stream {stream})
+        Ok(Stream { stream })
     }
 }
 

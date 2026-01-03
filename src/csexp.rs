@@ -2,8 +2,7 @@
 
 use thiserror::Error;
 
-#[derive(Error, Debug)]
-#[derive(PartialEq)]
+#[derive(Error, Debug, PartialEq)]
 pub enum SexpError<'a> {
     #[error("More data than needed to form an S-Expression")]
     MoreData(Sexp, &'a [u8]),
@@ -11,26 +10,31 @@ pub enum SexpError<'a> {
     InvalidFormat(String),
 }
 
-#[derive(Debug)]
-#[derive(PartialEq)]
+#[derive(Debug, PartialEq)]
 pub enum Sexp {
     Atom(Vec<u8>),
     List(Vec<Sexp>),
 }
 
 impl Sexp {
-
     /// Parse input, returning an [Sexp::Atom] and the rest of the expression
     fn parse_atom(s: &[u8]) -> Result<Sexp, SexpError> {
         let (size, s) = {
             let mut split = s.splitn(2, |&e| e == b':');
             match split.next() {
                 Some(item) => (
-                    std::str::from_utf8(item).ok().and_then(|item| item.parse::<usize>().ok() ).ok_or_else(||SexpError::InvalidFormat("Atom's first part is not a number".to_owned()))?,
-                    split.next().ok_or_else(||SexpError::InvalidFormat("Atom's second part is empty".to_owned()))?),
+                    std::str::from_utf8(item)
+                        .ok()
+                        .and_then(|item| item.parse::<usize>().ok())
+                        .ok_or_else(|| {
+                            SexpError::InvalidFormat("Atom's first part is not a number".to_owned())
+                        })?,
+                    split.next().ok_or_else(|| {
+                        SexpError::InvalidFormat("Atom's second part is empty".to_owned())
+                    })?,
+                ),
                 None => return Err(SexpError::InvalidFormat("Input is empty".to_owned())),
             }
-            
         };
         let atom = Sexp::Atom(s[..size].to_vec());
         let s = &s[size..];
@@ -87,7 +91,7 @@ impl Sexp {
                 exp.push(b':');
                 exp.extend_from_slice(data);
                 exp
-            },
+            }
             Sexp::List(exps) => {
                 let mut res = vec![b'('];
                 for exp in exps {
@@ -95,7 +99,7 @@ impl Sexp {
                 }
                 res.push(b')');
                 res
-            },
+            }
         }
     }
 }
@@ -160,7 +164,7 @@ mod tests {
                 Sexp::List(vec![
                     Sexp::Atom(b"e".to_vec()),
                     Sexp::Atom(b"12345".to_vec()),
-                ])
+                ]),
             ]),
         ]);
         assert_eq!(Sexp::parse(s), Ok(expected));
@@ -169,7 +173,10 @@ mod tests {
     #[test]
     fn parse_wrong_parenthese() {
         let s = b"(7:enc-val(4:ecdh(1:s10:abcdefghij)(1:e5:12345)";
-        assert_eq!(Sexp::parse(s), Err(SexpError::InvalidFormat("Unexpected EOF".to_owned())));
+        assert_eq!(
+            Sexp::parse(s),
+            Err(SexpError::InvalidFormat("Unexpected EOF".to_owned()))
+        );
     }
 
     #[test]
@@ -245,7 +252,7 @@ mod tests {
                 Sexp::List(vec![
                     Sexp::Atom(b"e".to_vec()),
                     Sexp::Atom(b"12345".to_vec()),
-                ])
+                ]),
             ]),
         ]);
         assert_eq!(s.to_vec(), expected);
