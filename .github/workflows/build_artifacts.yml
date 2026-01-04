@@ -18,15 +18,15 @@ jobs:
           - build_target: windows
             os: windows-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
       #- uses: rui314/setup-mold@v1 # faster linker
       #  with:
       #    make-default: false
       - name: Install libusb
         if: matrix.os == 'ubuntu-latest'
-        run: sudo apt install libusb-1.0-0-dev libusb-1.0-0 libudev1 libudev-dev
-      - uses: actions/cache@v3
+        run: sudo apt update && sudo apt install libusb-1.0-0-dev libusb-1.0-0 libudev1 libudev-dev
+      - uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/bin/
@@ -63,7 +63,7 @@ jobs:
         if: matrix.os == 'macos-latest'
         run: zip -9rm bin/ok-gpg-agent-${{ matrix.build_target }}.zip bin/*
       - name: Upload artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v6
         with:
           name: ok-gpg-agent-${{ matrix.build_target }}
           path: bin/ok-gpg-agent-*
