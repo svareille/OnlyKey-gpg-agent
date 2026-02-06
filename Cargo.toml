@@ -29,7 +29,7 @@ num-traits = "0.2.15"
 rand = "0.9.2"
 regex = "1.12.2"
 rpassword = "7.4.0"
-sequoia-openpgp = { version = "2.1.0", default-features = false, features = [
+sequoia-openpgp = { version = "=2.0.0-alpha.1", default-features = false, features = [
     "crypto-rust",
     "allow-experimental-crypto",
     "allow-variable-time-crypto",

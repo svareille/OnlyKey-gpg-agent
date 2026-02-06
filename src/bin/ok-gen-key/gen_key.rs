@@ -149,10 +149,10 @@ pub(crate) fn gen_key(
         .context("Failed to create the User ID's signature")?;
 
     (public_key, _) = public_key
-        .insert_packets(user_id)
+        .insert_packets2(user_id)
         .context("Failed to add the User ID to the cert")?;
     (public_key, _) = public_key
-        .insert_packets(uid_signature)
+        .insert_packets2(uid_signature)
         .context("Failed to add the User ID's signature to the cert")?;
 
     let subkey: Key<PublicParts, SubordinateRole> = Key::from(
@@ -198,10 +198,10 @@ pub(crate) fn gen_key(
         .context("Failed to create the subkey's signature")?;
 
     (public_key, _) = public_key
-        .insert_packets(subkey)
+        .insert_packets2(subkey)
         .context("Failed to add the subkey to the cert")?;
     (public_key, _) = public_key
-        .insert_packets(subkey_signature)
+        .insert_packets2(subkey_signature)
         .context("Failed to add the subkey's signature to the cert")?;
 
     let armored = String::from_utf8(public_key.armored().to_vec().unwrap())
