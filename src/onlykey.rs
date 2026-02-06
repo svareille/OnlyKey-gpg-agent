@@ -73,6 +73,8 @@ pub enum OnlyKeyError {
     WrongChallenge,
     #[error("Public key generation failed: {0}")]
     PublicKeyGenerationFailed(String),
+    #[error("Packets exceeded size limit")]
+    PacketSizeExceeded,
     #[error("Timeout occurred while waiting for user input")]
     Timeout,
     #[error(transparent)]
@@ -647,12 +649,16 @@ impl OnlyKey {
             .unwrap_or_default()
             .as_ref()
         {
-            "INITIALIZED" => Err(OnlyKeyError::Locked),
+            "Error device locked" => Err(OnlyKeyError::Locked), // "INITIALIZED"
             "Error incorrect challenge was entered" => Err(OnlyKeyError::WrongChallenge),
-            "Error no key set in this slot" => Err(OnlyKeyError::NoKeySet(match key {
-                KeyInfo::StoredKey(key) => key.slot.to_string(),
-                KeyInfo::DerivedKey(_) => "Derived key".to_string(),
-            })),
+            "Error no key set in this slot"
+            | "Error no ECC Private Key set in this slot"
+            | "Error no RSA Private Key set in this slot" => {
+                Err(OnlyKeyError::NoKeySet(match key {
+                    KeyInfo::StoredKey(key) => key.slot.to_string(),
+                    KeyInfo::DerivedKey(_) => "Derived key".to_string(),
+                }))
+            }
             "Error key not set as signature key" => {
                 Err(OnlyKeyError::NotASignatureKey(match key {
                     KeyInfo::StoredKey(key) => key.slot.to_string(),
@@ -665,9 +671,9 @@ impl OnlyKey {
                     KeyInfo::DerivedKey(_) => "Derived key".to_string(),
                 }))
             }
-            "Error with RSA data to sign invalid size" => Err(OnlyKeyError::InvalidDataSize),
+            "Error with RSA data to sign invalid size"
+            | "Error with RSA data to decrypt invalid size" => Err(OnlyKeyError::InvalidDataSize),
             "Error with RSA signing" => Err(OnlyKeyError::SignFailed),
-            "Error with RSA data to decrypt invalid size" => Err(OnlyKeyError::InvalidDataSize),
             "Error with RSA decryption" => Err(OnlyKeyError::DecryptFailed),
             "Error ECC type incorrect" => Err(OnlyKeyError::InvalidEccType),
             s @ "Error invalid key, key check failed" => Err(OnlyKeyError::Other(s.to_owned())),
@@ -680,23 +686,15 @@ impl OnlyKey {
             s @ "Error generating RSA public N" => {
                 Err(OnlyKeyError::PublicKeyGenerationFailed(s.to_owned()))
             }
-            "Error you must set a PIN first on OnlyKey" => Err(OnlyKeyError::NotInitialized),
-            "Error device locked" => Err(OnlyKeyError::Locked),
-            "Error not in config mode, hold button 6 down for 5 sec" => {
-                Err(OnlyKeyError::NotInConfigMode)
-            }
-            "No PIN set, You must set a PIN first" => Err(OnlyKeyError::NotInitialized),
+            "Error you must set a PIN first on OnlyKey"
+            | "No PIN set, You must set a PIN first"
+            | "Error OnlyKey must be initialized first" => Err(OnlyKeyError::NotInitialized),
+            "Error not in config mode, hold button 6 down for 5 sec"
+            | "Error not in config mode" => Err(OnlyKeyError::NotInConfigMode),
             "Error invalid ECC slot" => Err(OnlyKeyError::WrongEccSlot),
-            "Error no ECC Private Key set in this slot" => Err(OnlyKeyError::NoKeySet(match key {
-                KeyInfo::StoredKey(key) => key.slot.to_string(),
-                KeyInfo::DerivedKey(_) => "Derived key".to_string(),
-            })),
             "Error invalid RSA slot" => Err(OnlyKeyError::WrongRsaSlot),
-            "Error no RSA Private Key set in this slot" => Err(OnlyKeyError::NoKeySet(match key {
-                KeyInfo::StoredKey(key) => key.slot.to_string(),
-                KeyInfo::DerivedKey(_) => "Derived key".to_string(),
-            })),
             "Error invalid RSA type" => Err(OnlyKeyError::InvalidRsaType),
+            "Error packets received exceeded size limit" => Err(OnlyKeyError::PacketSizeExceeded),
             "Timeout occured while waiting for confirmation on OnlyKey" => {
                 Err(OnlyKeyError::Timeout)
             }
