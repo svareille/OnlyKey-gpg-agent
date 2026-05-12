@@ -89,20 +89,23 @@ $ gpg-connect-agent KILLAGENT /bye
 
 ### Debian with systemd
 
-Place the extracted binaries in a convenient place, preferably reachable by your `PATH`. `/usr/local/bin/` is a good choice.
-
 On some Linux (Debian and derivatives) `gpg-agent` is automatically started by systemd.
-The service file is `gpg-agent.service`, located in `/usr/lib/systemd/user/`.
 
-Make a backup of `/usr/lib/systemd/user/gpg-agent.service` and replace the line `ExecStart=/usr/bin/gpg-agent --supervised -v`
-by `ExecStart=/usr/local/bin/ok-gpg-agent` in the original service file.
+1. Place the extracted binaries in a convenient place, preferably reachable by your `PATH`. `/usr/local/bin/` is a good choice.
 
-```shell
-sudo cp /usr/lib/systemd/user/gpg-agent.service /usr/lib/systemd/user/gpg-agent.service.bak
-sudo nano /usr/lib/systemd/user/gpg-agent.service
-```
+2. Use the drop-ins unit file to override the default behavior:
 
-Restart the service (`sudo systemctl --user restart gpg-agent`) or kill the agent (`gpg-connect-agent KILLAGENT /bye`).
+   Run `sudo systemctl edit --user gpg-agent.service` which will open an editor where you have to enter:
+
+   ```conf
+   [Service]
+   ExecStart=
+   ExecStart=/usr/local/bin/ok-gpg-agent
+   ```
+
+   (the double `ExecStart` is required and not a typo)
+  
+3. Save and restart the service (`sudo systemctl --user restart gpg-agent`) or kill the agent (`gpg-connect-agent KILLAGENT /bye`).
 
 ### Portable use on Windows
 
