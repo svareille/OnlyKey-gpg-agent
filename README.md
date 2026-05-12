@@ -13,14 +13,15 @@ This agent **does not** replace the original gpg-agent. It works as a proxy betw
 (usually `gpg`) and `gpg-agent`.
 
 Works with:
+
 - `gpg` (and anything using `gpg`, like `git`)
 - GpgOL
 - Kleopatra
 - Mailvelope
 - ...
   
-
 This project provides 3 binaries:
+
 - `ok-gpg-agent`, which acts as a proxy in front of `gpg-agent` for signing and decryption.
 - `ok-gen-key`, which generates a public key.
 - `ok-move-key`, which moves private keys from file to free slots.
@@ -38,7 +39,7 @@ the operation.
 
 ## Differences with [`onlykey-agent`](https://docs.onlykey.io/onlykey-agent.html)
 
-OnlyKey can be used for both SSH and PGP (https://docs.onlykey.io/onlykey-agent.html) using the
+OnlyKey can be used for both SSH and PGP (<https://docs.onlykey.io/onlykey-agent.html>) using the
 official python package `onlykey-agent`. So, what are the differences with this project?
 
 First of all, the official `onlykey-agent` package supports SSH with the convenient command
@@ -60,10 +61,10 @@ something in Rust.
 
 ## Known bugs/limitations
 
-- Signing with an RSA key of 4096 bits may not work. See https://github.com/trustcrypto/libraries/issues/25 for more details.
+- Signing with an RSA key of 4096 bits may not work. See <https://github.com/trustcrypto/libraries/issues/25> for more details.
 - ~~Derived keys are not supported yet.~~ Derived keys are now supported!
 - Secp256k1 keys are not fully supported (signing and decryption work fine but generating or moving them does not).
-- Moving a key to a previously wiped RSA slot may not work. See https://github.com/trustcrypto/libraries/issues/26 for more details.
+- Moving a key to a previously wiped RSA slot may not work. See <https://github.com/trustcrypto/libraries/issues/26> for more details.
 
 ## Install
 
@@ -74,17 +75,21 @@ Download and extract the relevant archive for your system from the [release](htt
 Place the extracted binaries in a convenient place, preferably reachable by your `PATH`.
 
 Then, get the path of the `gpg.conf` file:
+
 ```shell
-$ gpgconf -L homedir
+gpgconf -L homedir
 ```
+
 And, in this file, add the line
+
 ```
 agent-program path/to/ok-gpg-agent
 ```
 
 If `gpg-agent` is already running, restart the computer, kill the process or use the command
+
 ```shell
-$ gpg-connect-agent KILLAGENT /bye
+gpg-connect-agent KILLAGENT /bye
 ```
 
 ### Debian with systemd
@@ -110,7 +115,7 @@ On some Linux (Debian and derivatives) `gpg-agent` is automatically started by s
 ### Portable use on Windows
 
 It is possible to use `ok-gen-key` and `ok-gpg-agent` from a portable installation of GPG, although
-not fully convenient. 
+not fully convenient.
 
 1. Follow the [guide to a portable version of GPG4Win](https://wiki.gnupg.org/Gpg4win/PortableVersion).
    Will will now refer to the folder containing the portable version as `Gpg4win_Portable`
@@ -119,10 +124,12 @@ not fully convenient.
    1. Rename `gpg-agent.exe` into `original-gpg-agent.exe`.
    2. Place `ok-gpg-agent.exe` in this folder and rename it into `gpg-agent.exe.
 4. Create the `ok-agent.toml` configuration file inside the `home` folder and populate it with:
-```toml
-agent_program = "./original-gpg-agent.exe"
-gpgconf = "./gpgconf.exe"
-```
+
+   ```toml
+   agent_program = "./original-gpg-agent.exe"
+   gpgconf = "./gpgconf.exe"
+   ```
+
 5. Enjoy!
 
 **Note:** a log file is always created in the temporary directory provided by the OS
@@ -175,8 +182,9 @@ Both these fields are informational only. Their values are not used anywhere and
 is to make the re-generation of the keys easier.
 
 To obtain the keygrip of a key, run:
+
 ```shell
-$ gpg --with-keygrip -k
+gpg --with-keygrip -k
 ```
 
 Each private key must have its own `[[keyinfo]]` section.
@@ -199,6 +207,7 @@ The possible global options of `ok-agent.toml` are:
 Theses options are all optional.
 
 Example config file:
+
 ```toml
 challenge = "false"
 log_level = "error"
@@ -333,6 +342,7 @@ guide to communicate with OnlyKey.
 ### Log file
 
 The log file is written in:
+
 - Unix:
   - A syslog if present (`journalctl --user -ef`);
   - The temporary directory otherwise, usually `/tmp/ok-gpg-agent.log`.
