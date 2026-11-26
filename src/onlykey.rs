@@ -77,12 +77,29 @@ pub enum OnlyKeyError {
     PacketSizeExceeded,
     #[error("Timeout occurred while waiting for user input")]
     Timeout,
+    #[error("OnlyKey did not answer")]
+    NoReply,
     #[error(transparent)]
     IOError(#[from] std::io::Error),
     #[error(transparent)]
     HIDError(#[from] hidapi::HidError),
     #[error("Other error: {0}")]
     Other(String),
+}
+
+/// How long `set_time` waits for the device to answer.
+///
+/// The monitor thread calls it while holding the device lock, so an
+/// unanswered request must not block forever.
+pub const SET_TIME_REPLY: Duration = Duration::from_secs(2);
+
+/// The text of a device reply, up to the first NUL.
+fn reply_string(reply: &[u8]) -> Result<String, OnlyKeyError> {
+    if reply.is_empty() {
+        return Err(OnlyKeyError::NoReply);
+    }
+    String::from_utf8(reply.split(|&c| c == 0).next().unwrap_or_default().to_vec())
+        .map_err(|_| OnlyKeyError::NotUtf8)
 }
 
 pub struct OnlyKey {
@@ -231,15 +248,7 @@ impl OnlyKey {
     }
 
     pub fn read_string(&self) -> Result<String, OnlyKeyError> {
-        let s = String::from_utf8(
-            self.read()?
-                .split(|&c| c == 0)
-                .next()
-                .unwrap_or_default()
-                .to_vec(),
-        )
-        .map_err(|_| OnlyKeyError::NotUtf8)?;
-        Ok(s)
+        reply_string(&self.read_timeout(Some(SET_TIME_REPLY))?)
     }
 
     pub fn read(&self) -> Result<Vec<u8>, OnlyKeyError> {
@@ -734,5 +743,32 @@ pub fn openpgp_cipher_get_algo_keylen(algo: u8) -> usize {
         12 => 192, // CIPHER_ALGO_CAMELLIA192
         13 => 256, // CIPHER_ALGO_CAMELLIA256
         _ => 0,
+    }
+}
+
+#[cfg(test)]
+mod reply_tests {
+    use super::*;
+
+    #[test]
+    fn no_reply_is_an_error() {
+        assert!(matches!(reply_string(&[]), Err(OnlyKeyError::NoReply)));
+    }
+
+    #[test]
+    fn reply_stops_at_nul() {
+        assert_eq!(
+            reply_string(b"UNLOCKED3.0.4\0\0x").unwrap(),
+            "UNLOCKED3.0.4"
+        );
+        assert_eq!(reply_string(b"INITIALIZED").unwrap(), "INITIALIZED");
+    }
+
+    #[test]
+    fn non_utf8_reply_is_an_error() {
+        assert!(matches!(
+            reply_string(&[0xff, 0xfe]),
+            Err(OnlyKeyError::NotUtf8)
+        ));
     }
 }
